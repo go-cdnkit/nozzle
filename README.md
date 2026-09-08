@@ -16,3 +16,5 @@ Coming with the first release.
 
 Want support for your CDN? [Open an issue](https://github.com/go-cdnkit/nozzle/issues)
 with a link to its API documentation. Please keep credentials private.
+
+See [Contributing](CONTRIBUTING.md) for local development commands.
