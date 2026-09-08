@@ -14,13 +14,20 @@ env:
 
 jobs:
   test:
-    name: Test (Go ${{ matrix.go }})
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }}, Go ${{ matrix.go }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    env:
+      CGO_ENABLED: "0"
     strategy:
       fail-fast: false
       matrix:
+        # These runner labels select Linux/Windows amd64 and macOS arm64.
+        os: [ubuntu-24.04, macos-15, windows-2025]
         go: ["1.26.0", stable]
+        include:
+          - os: ubuntu-24.04-arm
+            go: stable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,13 +36,45 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           cache: false # No external dependencies or go.sum yet.
-      - run: make fmt-check deps-check test
-      - if: matrix.go == 'stable'
-        run: make test-race
+      - name: Show toolchain and platform
+        run: |
+          go version
+          go env GOOS GOARCH CGO_ENABLED
+      - run: go test ./...
+
+  race:
+    name: Race (Linux amd64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - run: go test -race ./...
+
+  checks:
+    name: Format and modules
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - run: make fmt-check deps-check
 
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
