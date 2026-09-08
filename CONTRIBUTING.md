@@ -20,3 +20,16 @@ each implementation, using a local HTTP server rather than live CDN credentials.
 
 Keep changes focused. For a new provider, open an issue with its API documentation
 first. Never commit tokens or other credentials.
+
+## CI
+
+- Package tests run on Linux amd64, macOS arm64, and Windows amd64 with Go 1.26.0
+  and stable Go. Linux arm64 runs stable Go. These are native test runs, not just
+  cross-compilation checks.
+- Package tests disable CGO. A separate Linux amd64 job enables CGO and runs
+  `go test -race ./...` with stable Go.
+- Formatting, module drift, and lint checks run on Linux with the Go version in
+  `go.mod`. Platform test jobs use `go test ./...` directly, without requiring Make.
+
+CI runs for pull requests and pushes to `main`, and can also be started manually.
+Tests must not require live CDN credentials or mutate real CDN caches.
