@@ -59,3 +59,42 @@ func TestPlanURLsPreservesDuplicateInputs(t *testing.T) {
 		t.Fatalf("operations = %#v, want %#v", plan.Operations, want)
 	}
 }
+
+func TestPlanURLsRequestLimitBoundaries(t *testing.T) {
+	tests := []struct {
+		name  string
+		urls  []string
+		limit int
+		sizes []int
+	}{
+		{name: "below", urls: []string{"https://example.com/a"}, limit: 2, sizes: []int{1}},
+		{name: "at", urls: []string{"https://example.com/a", "https://example.com/b"}, limit: 2, sizes: []int{2}},
+		{name: "above", urls: []string{"https://example.com/a", "https://example.com/b", "https://example.com/c"}, limit: 2, sizes: []int{2, 1}},
+		{name: "exact multiple", urls: []string{"https://example.com/a", "https://example.com/b", "https://example.com/c", "https://example.com/d"}, limit: 2, sizes: []int{2, 2}},
+		{name: "one per operation", urls: []string{"https://example.com/a", "https://example.com/b"}, limit: 1, sizes: []int{1, 1}},
+		{name: "maximum integer", urls: []string{"https://example.com/a", "https://example.com/b"}, limit: int(^uint(0) >> 1), sizes: []int{2}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plan, err := PlanURLs(tt.urls, tt.limit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan == nil {
+				t.Fatal("plan is nil")
+			}
+			var sizes []int
+			var flattened []string
+			for _, operation := range plan.Operations {
+				sizes = append(sizes, len(operation.URLs))
+				flattened = append(flattened, operation.URLs...)
+			}
+			if !reflect.DeepEqual(sizes, tt.sizes) {
+				t.Fatalf("operation sizes = %v, want %v", sizes, tt.sizes)
+			}
+			if !reflect.DeepEqual(flattened, tt.urls) {
+				t.Fatalf("planned URLs = %v, want %v", flattened, tt.urls)
+			}
+		})
+	}
+}
