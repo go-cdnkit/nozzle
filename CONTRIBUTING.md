@@ -14,9 +14,10 @@ Run `make check` before submitting a change. The individual commands are:
 | `make test-race` | `go test -race ./...` | Run tests with the race detector; requires a supported platform and C compiler. |
 | `make lint` | `golangci-lint run ./...` | Run the standard linters and gofmt checks. |
 
-The package currently contains documentation only. `[no test files]` confirms
-compilation, not working CDN behavior. Add focused `_test.go` tests alongside
-each implementation, using a local HTTP server rather than live CDN credentials.
+The package supports local URL planning, not CDN execution. Planning tests do not
+prove provider acceptance or cache invalidation. Add focused `_test.go` tests
+alongside each implementation, using a local HTTP server for provider behavior
+rather than live CDN credentials.
 
 Keep changes focused. For a new provider, open an issue with its API documentation
 first. Never commit tokens or other credentials.
