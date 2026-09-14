@@ -1,6 +1,7 @@
 package nozzle
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -119,5 +120,26 @@ func TestPlanURLsPreservesExactURLText(t *testing.T) {
 	}
 	if !reflect.DeepEqual(plan.Operations[0].URLs, input) {
 		t.Fatalf("planned URLs = %q, want %q", plan.Operations[0].URLs, input)
+	}
+}
+
+func TestPlanURLsRejectsInvalidTargetsAtomically(t *testing.T) {
+	invalid := []string{
+		"", "/article", "//example.com/article", "ftp://example.com/a",
+		"https:///article", "https://", "https://example.com/%zz",
+		"https://example.com:bad/a", " https://example.com/a",
+		"https://example.com/a b", "https://example.com/a\n",
+	}
+	for _, target := range invalid {
+		t.Run(target, func(t *testing.T) {
+			plan, err := PlanURLs([]string{"https://example.com/valid", target, "https://example.com/later"}, 1)
+			if err == nil || plan != nil {
+				t.Fatalf("plan = %#v, error = %v", plan, err)
+			}
+			var invalidTarget *InvalidTargetError
+			if !errors.As(err, &invalidTarget) || invalidTarget.Index != 1 {
+				t.Fatalf("error = %v, want InvalidTargetError at index 1", err)
+			}
+		})
 	}
 }
