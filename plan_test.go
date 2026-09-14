@@ -171,3 +171,30 @@ func TestPlanURLsReportsFirstInvalidInput(t *testing.T) {
 		t.Fatalf("plan = %#v, error = %v", plan, err)
 	}
 }
+
+func TestPlanURLsDoesNotAliasCallerData(t *testing.T) {
+	input := []string{"https://example.com/a", "https://example.com/b", "https://example.com/c"}
+	original := append([]string(nil), input...)
+	plan, err := PlanURLs(input, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || len(plan.Operations) != 2 || len(plan.Operations[0].URLs) != 2 || len(plan.Operations[1].URLs) != 1 {
+		t.Fatalf("plan = %#v, want operation sizes 2 and 1", plan)
+	}
+	if !reflect.DeepEqual(input, original) {
+		t.Fatalf("planning changed input to %v", input)
+	}
+	input[0] = "https://example.com/caller-change"
+	if plan.Operations[0].URLs[0] != original[0] {
+		t.Fatal("caller mutation changed the plan")
+	}
+	plan.Operations[0].URLs[1] = "https://example.com/plan-change"
+	if input[1] != original[1] {
+		t.Fatal("plan mutation changed the input")
+	}
+	plan.Operations[0].URLs = append(plan.Operations[0].URLs, "https://example.com/appended")
+	if plan.Operations[1].URLs[0] != original[2] || input[2] != original[2] {
+		t.Fatal("append changed another operation or the input")
+	}
+}
