@@ -18,3 +18,15 @@ func TestPlanURLsSingleTarget(t *testing.T) {
 		t.Fatalf("operations = %#v, want %#v", plan.Operations, want)
 	}
 }
+
+func TestPlanURLsEmptyInput(t *testing.T) {
+	for _, input := range [][]string{nil, {}} {
+		plan, err := PlanURLs(input, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plan == nil || len(plan.Operations) != 0 {
+			t.Fatalf("empty input plan = %#v", plan)
+		}
+	}
+}

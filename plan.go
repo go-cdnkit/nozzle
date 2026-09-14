@@ -12,6 +12,10 @@ type Operation struct {
 
 // PlanURLs builds a plan from exact URLs.
 func PlanURLs(urls []string, maxURLsPerOperation int) (*Plan, error) {
+	if len(urls) == 0 {
+		return &Plan{}, nil
+	}
+
 	targets := make([]string, len(urls))
 	copy(targets, urls)
 	return &Plan{Operations: []Operation{{URLs: targets}}}, nil
