@@ -143,3 +143,13 @@ func TestPlanURLsRejectsInvalidTargetsAtomically(t *testing.T) {
 		})
 	}
 }
+
+func TestPlanURLsRejectsUserInfo(t *testing.T) {
+	for _, target := range []string{"https://user@example.com/a", "https://user:secret@example.com/a"} {
+		plan, err := PlanURLs([]string{target}, 1)
+		var invalidTarget *InvalidTargetError
+		if plan != nil || !errors.As(err, &invalidTarget) || invalidTarget.Index != 0 {
+			t.Fatalf("plan = %#v, error = %v", plan, err)
+		}
+	}
+}

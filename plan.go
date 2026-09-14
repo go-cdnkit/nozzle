@@ -48,6 +48,9 @@ func PlanURLs(urls []string, maxURLsPerOperation int) (*Plan, error) {
 		if parsed.Hostname() == "" {
 			return nil, &InvalidTargetError{Index: i, Reason: "missing host"}
 		}
+		if parsed.User != nil {
+			return nil, &InvalidTargetError{Index: i, Reason: "URL contains user information"}
+		}
 	}
 
 	plan := &Plan{}
