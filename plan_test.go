@@ -41,3 +41,21 @@ func TestPlanURLsRejectsNonPositiveLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanURLsPreservesDuplicateInputs(t *testing.T) {
+	input := []string{"https://example.com/a", "https://example.com/b", "https://example.com/a"}
+	plan, err := PlanURLs(input, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil {
+		t.Fatal("plan is nil")
+	}
+	want := []Operation{
+		{URLs: []string{"https://example.com/a", "https://example.com/b"}},
+		{URLs: []string{"https://example.com/a"}},
+	}
+	if !reflect.DeepEqual(plan.Operations, want) {
+		t.Fatalf("operations = %#v, want %#v", plan.Operations, want)
+	}
+}

@@ -18,11 +18,13 @@ func PlanURLs(urls []string, maxURLsPerOperation int) (*Plan, error) {
 		return nil, fmt.Errorf("non-positive URL limit: %d", maxURLsPerOperation)
 	}
 
-	if len(urls) == 0 {
-		return &Plan{}, nil
+	plan := &Plan{}
+	for start := 0; start < len(urls); {
+		size := min(maxURLsPerOperation, len(urls)-start)
+		targets := make([]string, size)
+		copy(targets, urls[start:start+size])
+		plan.Operations = append(plan.Operations, Operation{URLs: targets})
+		start += size
 	}
-
-	targets := make([]string, len(urls))
-	copy(targets, urls)
-	return &Plan{Operations: []Operation{{URLs: targets}}}, nil
+	return plan, nil
 }
