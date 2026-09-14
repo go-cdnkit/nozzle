@@ -1,5 +1,7 @@
 package nozzle
 
+import "fmt"
+
 // Plan describes URL operations without performing network requests.
 type Plan struct {
 	Operations []Operation
@@ -12,6 +14,10 @@ type Operation struct {
 
 // PlanURLs builds a plan from exact URLs.
 func PlanURLs(urls []string, maxURLsPerOperation int) (*Plan, error) {
+	if maxURLsPerOperation <= 0 {
+		return nil, fmt.Errorf("non-positive URL limit: %d", maxURLsPerOperation)
+	}
+
 	if len(urls) == 0 {
 		return &Plan{}, nil
 	}

@@ -30,3 +30,14 @@ func TestPlanURLsEmptyInput(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanURLsRejectsNonPositiveLimit(t *testing.T) {
+	for _, limit := range []int{0, -1} {
+		for _, input := range [][]string{nil, {"https://example.com/a"}} {
+			plan, err := PlanURLs(input, limit)
+			if err == nil || plan != nil {
+				t.Fatalf("limit %d, input %v: plan = %#v, error = %v", limit, input, plan, err)
+			}
+		}
+	}
+}
