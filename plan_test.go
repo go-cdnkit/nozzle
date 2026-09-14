@@ -198,3 +198,18 @@ func TestPlanURLsDoesNotAliasCallerData(t *testing.T) {
 		t.Fatal("append changed another operation or the input")
 	}
 }
+
+func TestPlanURLsRepeatable(t *testing.T) {
+	input := []string{"https://example.com/b", "https://example.com/a", "https://example.com/b"}
+	first, err := PlanURLs(input, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := PlanURLs(input, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == nil || second == nil || !reflect.DeepEqual(first.Operations, second.Operations) {
+		t.Fatalf("plans differ: %#v and %#v", first, second)
+	}
+}
