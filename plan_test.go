@@ -163,3 +163,11 @@ func TestPlanURLsRejectsFragments(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanURLsReportsFirstInvalidInput(t *testing.T) {
+	plan, err := PlanURLs([]string{"https://example.com/valid", "/first", "/second"}, 2)
+	var invalidTarget *InvalidTargetError
+	if plan != nil || !errors.As(err, &invalidTarget) || invalidTarget.Index != 1 {
+		t.Fatalf("plan = %#v, error = %v", plan, err)
+	}
+}
