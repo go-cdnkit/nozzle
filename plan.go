@@ -51,6 +51,10 @@ func PlanURLs(urls []string, maxURLsPerOperation int) (*Plan, error) {
 		if parsed.User != nil {
 			return nil, &InvalidTargetError{Index: i, Reason: "URL contains user information"}
 		}
+		// Inspect the original text so an empty fragment is rejected as well.
+		if strings.Contains(target, "#") {
+			return nil, &InvalidTargetError{Index: i, Reason: "URL contains a fragment"}
+		}
 	}
 
 	plan := &Plan{}
