@@ -98,3 +98,26 @@ func TestPlanURLsRequestLimitBoundaries(t *testing.T) {
 		})
 	}
 }
+
+func TestPlanURLsPreservesExactURLText(t *testing.T) {
+	input := []string{
+		"https://EXAMPLE.com/Article",
+		"https://example.com/a%2fb?b=2&a=1&a=3",
+		"https://example.com/a%2Fb?x=a+b&y=a%20b",
+		"https://example.com",
+		"https://example.com/",
+		"https://example.com/path?",
+		"http://example.com:8080/path",
+		"https://example.com/a/../b",
+	}
+	plan, err := PlanURLs(input, len(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || len(plan.Operations) != 1 {
+		t.Fatalf("plan = %#v, want one operation", plan)
+	}
+	if !reflect.DeepEqual(plan.Operations[0].URLs, input) {
+		t.Fatalf("planned URLs = %q, want %q", plan.Operations[0].URLs, input)
+	}
+}
