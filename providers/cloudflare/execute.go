@@ -96,9 +96,13 @@ func (p *Provider) executeOperation(ctx context.Context, operation nozzle.Operat
 		// The complete response determines the outcome; Close releases resources.
 		_ = resp.Body.Close()
 	}()
-	body, err := io.ReadAll(resp.Body)
+	const maxResponseBytes = 64 * 1024
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return Indeterminate, resp.StatusCode, err
+	}
+	if len(body) > maxResponseBytes {
+		return Indeterminate, resp.StatusCode, errors.New("purge response exceeds 64 KiB")
 	}
 	success, err := parsePurgeResponse(body)
 	if err != nil {

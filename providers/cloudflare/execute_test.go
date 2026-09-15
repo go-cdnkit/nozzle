@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -474,5 +475,58 @@ func TestCloudflareExecuteCancellationDuringSubmission(t *testing.T) {
 	}
 	if results[0].Status != Indeterminate || results[1].Status != NotAttempted {
 		t.Fatalf("results = %#v", results)
+	}
+}
+
+func TestCloudflareExecuteBoundsAndCompletesResponseReading(t *testing.T) {
+	const limit = 64 * 1024
+	base := `{"success":true}`
+	tests := []struct {
+		name          string
+		body          string
+		contentLength string
+		accepted      bool
+	}{
+		{"at limit", base + strings.Repeat(" ", limit-len(base)), "", true},
+		{"above limit", base + strings.Repeat(" ", limit-len(base)+1), "", false},
+		{"truncated body", base, strconv.Itoa(len(base) + 100), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if tt.contentLength != "" {
+					w.Header().Set("Content-Length", tt.contentLength)
+				}
+				if _, err := io.WriteString(w, tt.body); err != nil && tt.accepted {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client := server.Client()
+			transport := client.Transport.(*http.Transport)
+			transport.TLSClientConfig.ServerName = "example.com"
+			transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}
+			client.Timeout = 5 * time.Second
+			provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: client, MaxURLsPerRequest: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}}}
+			results, err := provider.Execute(t.Context(), plan)
+			if len(results) != 1 || calls.Load() != 1 {
+				t.Fatalf("results = %#v, calls = %d", results, calls.Load())
+			}
+			want := Indeterminate
+			if tt.accepted {
+				want = Accepted
+			}
+			if (err == nil) != tt.accepted || results[0].Status != want || results[0].HTTPStatus != 200 {
+				t.Fatalf("results = %#v, error = %v", results, err)
+			}
+		})
 	}
 }
