@@ -661,3 +661,39 @@ func TestCloudflareExecuteSnapshotsTargetsBeforeSending(t *testing.T) {
 		t.Fatal("result storage aliases caller or another result")
 	}
 }
+
+func TestCloudflareExecuteDoesNotEchoRemoteResponseBodies(t *testing.T) {
+	const secret = "private-response-marker"
+	for _, body := range []string{
+		`{"success":false,"errors":[{"code":1000,"message":"private-response-marker test-token"}]}`,
+		"<html>private-response-marker test-token</html>",
+	} {
+		t.Run(body[:1], func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if _, err := io.WriteString(w, body); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client := server.Client()
+			transport := client.Transport.(*http.Transport)
+			transport.TLSClientConfig.ServerName = "example.com"
+			transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}
+			client.Timeout = 5 * time.Second
+			provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: client, MaxURLsPerRequest: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a?secret=private-response-marker"}}}}
+			results, err := provider.Execute(t.Context(), plan)
+			if err == nil || len(results) != 1 {
+				t.Fatalf("results = %#v, error = %v", results, err)
+			}
+			if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "test-token") {
+				t.Fatal("error includes response or credential data")
+			}
+		})
+	}
+}
