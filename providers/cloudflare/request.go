@@ -12,34 +12,7 @@ func newPurgeRequest(
 	ctx context.Context,
 	zoneID, apiToken, targetURL string,
 ) (*http.Request, error) {
-	payload := struct {
-		Files []string `json:"files"`
-	}{
-		Files: []string{targetURL},
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	endpoint := "https://api.cloudflare.com/client/v4/zones/" +
-		zoneID + "/purge_cache"
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		endpoint,
-		bytes.NewReader(body),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+apiToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	return req, nil
+	return newBatchPurgeRequest(ctx, zoneID, apiToken, []string{targetURL})
 }
 
 // newBatchPurgeRequest preserves the supplied URL order and duplicate occurrences.
