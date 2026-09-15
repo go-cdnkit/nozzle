@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"unicode"
+
+	"github.com/go-cdnkit/nozzle"
 )
 
 // Config holds explicit Cloudflare configuration. No values are discovered or defaulted.
@@ -54,4 +56,12 @@ func New(config Config) (*Provider, error) {
 	}
 
 	return &Provider{config: config}, nil
+}
+
+// Plan validates and groups exact URLs using the configured request capacity,
+// without network I/O. It preserves the input and error semantics of nozzle.PlanURLs.
+// The returned plan owns its URL slices, but remains editable and is not bound
+// to this provider. Planning does not verify zone membership or cache-key coverage.
+func (p *Provider) Plan(urls []string) (*nozzle.Plan, error) {
+	return nozzle.PlanURLs(urls, p.config.MaxURLsPerRequest)
 }

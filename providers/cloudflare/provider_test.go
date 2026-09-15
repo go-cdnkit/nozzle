@@ -3,8 +3,10 @@ package cloudflare
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -55,6 +57,35 @@ func TestNewRejectsInvalidCloudflareConfiguration(t *testing.T) {
 			provider, err := New(config)
 			if err == nil || provider != nil {
 				t.Fatalf("provider = %v, error = %v", provider, err)
+			}
+		})
+	}
+}
+
+func TestCloudflarePlanUsesConfiguredLimit(t *testing.T) {
+	for _, limit := range []int{1, 100, 500} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: &http.Client{}, MaxURLsPerRequest: limit})
+			if err != nil {
+				t.Fatal(err)
+			}
+			urls := make([]string, limit+1)
+			for i := range urls {
+				urls[i] = fmt.Sprintf("https://example.com/item/%d", i)
+			}
+			plan, err := provider.Plan(urls)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan == nil || len(plan.Operations) != 2 {
+				t.Fatalf("plan = %#v, want two operations", plan)
+			}
+			if len(plan.Operations[0].URLs) != limit || len(plan.Operations[1].URLs) != 1 {
+				t.Fatalf("operation sizes = %d, %d", len(plan.Operations[0].URLs), len(plan.Operations[1].URLs))
+			}
+			got := append(append([]string(nil), plan.Operations[0].URLs...), plan.Operations[1].URLs...)
+			if !reflect.DeepEqual(got, urls) {
+				t.Fatal("planned targets differ from the input")
 			}
 		})
 	}
