@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -193,5 +194,43 @@ func TestCloudflareExecuteSendsExactURLBatch(t *testing.T) {
 	}
 	if results[0].Status != Accepted || results[0].HTTPStatus != http.StatusOK || !reflect.DeepEqual(results[0].Operation, plan.Operations[0]) {
 		t.Fatalf("result = %#v", results[0])
+	}
+}
+
+func TestCloudflareExecuteAcceptsOptionalMetadata(t *testing.T) {
+	tests := []struct {
+		status int
+		body   string
+	}{
+		{200, `{"success":true}`},
+		{201, `{"success":true,"result":null,"errors":[]}`},
+		{202, `{"success":true,"errors":[],"messages":[{"code":1000,"message":"notice"}],"extra":{"future":"value"}}`},
+	}
+	for _, tt := range tests {
+		t.Run(strconv.Itoa(tt.status), func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				if _, err := io.WriteString(w, tt.body); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client := server.Client()
+			transport := client.Transport.(*http.Transport)
+			transport.TLSClientConfig.ServerName = "example.com"
+			transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}
+			client.Timeout = 5 * time.Second
+			provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: client, MaxURLsPerRequest: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}}}
+			results, err := provider.Execute(t.Context(), plan)
+			if err != nil || len(results) != 1 || results[0].Status != Accepted || results[0].HTTPStatus != tt.status {
+				t.Fatalf("results = %#v, error = %v", results, err)
+			}
+		})
 	}
 }
