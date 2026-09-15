@@ -44,5 +44,10 @@ func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationR
 			return results, err
 		}
 	}
+	if len(results) > 0 {
+		if err := ctx.Err(); err != nil {
+			return results, err
+		}
+	}
 	return results, nil
 }
