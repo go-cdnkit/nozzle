@@ -129,3 +129,18 @@ func TestCloudflarePlanRejectsInvalidInputAtomically(t *testing.T) {
 		t.Fatalf("plan = %#v, error = %v", plan, err)
 	}
 }
+
+func TestCloudflarePlanPreservesExactTargets(t *testing.T) {
+	provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: &http.Client{}, MaxURLsPerRequest: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	urls := []string{"https://EXAMPLE.com/A%2fb?b=2&a=1&a=3", "https://example.com/path?", "https://EXAMPLE.com/A%2fb?b=2&a=1&a=3"}
+	plan, err := provider.Plan(urls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan == nil || len(plan.Operations) != 1 || !reflect.DeepEqual(plan.Operations[0].URLs, urls) {
+		t.Fatalf("plan = %#v, want unchanged targets", plan)
+	}
+}
