@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"slices"
 
 	"github.com/go-cdnkit/nozzle"
@@ -101,12 +102,15 @@ func (p *Provider) executeOperation(ctx context.Context, operation nozzle.Operat
 		return Indeterminate, resp.StatusCode, err
 	}
 	var response struct {
-		Success bool `json:"success"`
+		Success *bool `json:"success"`
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
 		return Indeterminate, resp.StatusCode, errors.New("invalid purge response")
 	}
-	if !response.Success || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if response.Success != nil && !*response.Success && (resp.StatusCode >= 200 && resp.StatusCode < 300 || resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout) {
+		return Rejected, resp.StatusCode, errors.New("purge operation was rejected")
+	}
+	if response.Success == nil || !*response.Success || resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return Indeterminate, resp.StatusCode, errors.New("purge acceptance was not confirmed")
 	}
 	return Accepted, resp.StatusCode, nil
