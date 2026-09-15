@@ -2,6 +2,7 @@ package cloudflare
 
 import (
 	"context"
+	"errors"
 
 	"github.com/go-cdnkit/nozzle"
 )
@@ -13,5 +14,8 @@ type OperationResult struct {
 
 // Execute returns no results for an empty plan.
 func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
+	if plan == nil {
+		return nil, errors.New("cloudflare: nil execution plan")
+	}
 	return nil, nil
 }
