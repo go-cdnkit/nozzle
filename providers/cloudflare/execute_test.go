@@ -234,3 +234,49 @@ func TestCloudflareExecuteAcceptsOptionalMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestCloudflareExecutePreservesOperationOrder(t *testing.T) {
+	requests := make(chan []string, 3)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Files []string `json:"files"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		select {
+		case requests <- body.Files:
+		default:
+			t.Error("extra request")
+		}
+		if _, err := io.WriteString(w, `{"success":true}`); err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client := server.Client()
+	transport := client.Transport.(*http.Transport)
+	transport.TLSClientConfig.ServerName = "example.com"
+	transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}
+	client.Timeout = 5 * time.Second
+	provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: client, MaxURLsPerRequest: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &nozzle.Plan{Operations: []nozzle.Operation{
+		{URLs: []string{"https://example.com/a"}},
+		{URLs: []string{"https://example.com/b", "https://example.com/b"}},
+		{URLs: []string{"https://example.com/c"}},
+	}}
+	results, err := provider.Execute(t.Context(), plan)
+	if err != nil || len(results) != 3 || len(requests) != 3 {
+		t.Fatalf("results = %#v, error = %v, requests = %d", results, err, len(requests))
+	}
+	for i, result := range results {
+		if result.Status != Accepted || result.HTTPStatus != http.StatusOK || !reflect.DeepEqual(result.Operation, plan.Operations[i]) || !reflect.DeepEqual(<-requests, plan.Operations[i].URLs) {
+			t.Fatalf("operation %d differs", i)
+		}
+	}
+}
