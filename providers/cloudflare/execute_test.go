@@ -564,3 +564,48 @@ func TestCloudflareExecuteHonorsClientTimeout(t *testing.T) {
 		t.Fatal("caller timeout was changed")
 	}
 }
+
+func TestCloudflareExecuteDoesNotFollowRedirects(t *testing.T) {
+	for _, status := range []int{301, 302, 303, 307, 308} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Location", "/redirected")
+				w.WriteHeader(status)
+				if _, err := io.WriteString(w, `{"success":true}`); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client := server.Client()
+			transport := client.Transport.(*http.Transport)
+			transport.TLSClientConfig.ServerName = "example.com"
+			transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}
+			client.Timeout = 5 * time.Second
+			var redirects atomic.Int32
+			redirectPolicy := func(*http.Request, []*http.Request) error {
+				redirects.Add(1)
+				return errors.New("caller redirect policy")
+			}
+			client.CheckRedirect = redirectPolicy
+			provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: client, MaxURLsPerRequest: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}, {URLs: []string{"https://example.com/b"}}}}
+			results, err := provider.Execute(t.Context(), plan)
+			if err == nil || len(results) != 2 || calls.Load() != 1 || redirects.Load() != 0 {
+				t.Fatalf("results = %#v, error = %v, calls = %d, redirects = %d", results, err, calls.Load(), redirects.Load())
+			}
+			if results[0].Status != Indeterminate || results[0].HTTPStatus != status || results[1].Status != NotAttempted {
+				t.Fatalf("results = %#v", results)
+			}
+			if client.Transport != transport || client.Timeout != 5*time.Second || reflect.ValueOf(client.CheckRedirect).Pointer() != reflect.ValueOf(redirectPolicy).Pointer() {
+				t.Fatal("caller HTTP client was changed")
+			}
+		})
+	}
+}

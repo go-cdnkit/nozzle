@@ -88,7 +88,11 @@ func (p *Provider) executeOperation(ctx context.Context, operation nozzle.Operat
 	if err != nil {
 		return NotAttempted, 0, err
 	}
-	resp, err := p.config.HTTPClient.Do(req)
+	client := *p.config.HTTPClient
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return Indeterminate, 0, err
 	}
