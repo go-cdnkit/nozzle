@@ -144,3 +144,32 @@ func TestCloudflarePlanPreservesExactTargets(t *testing.T) {
 		t.Fatalf("plan = %#v, want unchanged targets", plan)
 	}
 }
+
+func TestCloudflareConfigurationAndPlansAreIndependent(t *testing.T) {
+	config := Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: &http.Client{}, MaxURLsPerRequest: 1}
+	provider, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.MaxURLsPerRequest = 100
+	urls := []string{"https://example.com/a", "https://example.com/b"}
+	first, err := provider.Plan(urls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == nil || len(first.Operations) != 2 || len(first.Operations[0].URLs) != 1 || len(first.Operations[1].URLs) != 1 {
+		t.Fatalf("plan = %#v, want two single-target operations", first)
+	}
+	urls[0] = "https://example.com/changed"
+	if first.Operations[0].URLs[0] != "https://example.com/a" {
+		t.Fatal("caller mutation changed the plan")
+	}
+	second, err := provider.Plan([]string{"https://example.com/a", "https://example.com/b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Operations[0].URLs[0] = "https://example.com/plan-change"
+	if second == nil || len(second.Operations) != 2 || len(second.Operations[0].URLs) != 1 || second.Operations[0].URLs[0] != "https://example.com/a" {
+		t.Fatalf("second plan = %#v, want independent targets", second)
+	}
+}
