@@ -2,7 +2,6 @@ package cloudflare
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -101,16 +100,14 @@ func (p *Provider) executeOperation(ctx context.Context, operation nozzle.Operat
 	if err != nil {
 		return Indeterminate, resp.StatusCode, err
 	}
-	var response struct {
-		Success *bool `json:"success"`
+	success, err := parsePurgeResponse(body)
+	if err != nil {
+		return Indeterminate, resp.StatusCode, err
 	}
-	if err := json.Unmarshal(body, &response); err != nil {
-		return Indeterminate, resp.StatusCode, errors.New("invalid purge response")
-	}
-	if response.Success != nil && !*response.Success && (resp.StatusCode >= 200 && resp.StatusCode < 300 || resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout) {
+	if !success && (resp.StatusCode >= 200 && resp.StatusCode < 300 || resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout) {
 		return Rejected, resp.StatusCode, errors.New("purge operation was rejected")
 	}
-	if response.Success == nil || !*response.Success || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if !success || resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return Indeterminate, resp.StatusCode, errors.New("purge acceptance was not confirmed")
 	}
 	return Accepted, resp.StatusCode, nil

@@ -316,3 +316,60 @@ func TestCloudflareExecuteReportsExplicitRejection(t *testing.T) {
 		})
 	}
 }
+
+func TestCloudflareExecuteDoesNotGuessAcceptance(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"empty", 200, ""},
+		{"HTML", 200, "<html>error</html>"},
+		{"missing success", 200, "{}"},
+		{"null success", 200, `{"success":null}`},
+		{"string success", 200, `{"success":"true"}`},
+		{"trailing JSON", 200, `{"success":true}{"success":false}`},
+		{"trailing garbage", 200, `{"success":true}broken`},
+		{"duplicate success", 200, `{"success":false,"success":true}`},
+		{"contradictory errors", 200, `{"success":true,"errors":[{"code":1000,"message":"failure"}]}`},
+		{"malformed errors", 200, `{"success":true,"errors":"failure"}`},
+		{"server error with false", 500, `{"success":false}`},
+		{"server error with true", 503, `{"success":true}`},
+		{"client error with true", 403, `{"success":true}`},
+		{"rate limit without envelope", 429, ""},
+		{"request timeout", 408, `{"success":false}`},
+		{"redirect without location", 302, `{"success":true}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(tt.status)
+				if _, err := io.WriteString(w, tt.body); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client := server.Client()
+			transport := client.Transport.(*http.Transport)
+			transport.TLSClientConfig.ServerName = "example.com"
+			transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}
+			client.Timeout = 5 * time.Second
+			provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: client, MaxURLsPerRequest: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}, {URLs: []string{"https://example.com/b"}}}}
+			results, err := provider.Execute(t.Context(), plan)
+			if err == nil || len(results) != 2 || calls.Load() != 1 {
+				t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
+			}
+			if results[0].Status != Indeterminate || results[0].HTTPStatus != tt.status || results[1].Status != NotAttempted {
+				t.Fatalf("results = %#v", results)
+			}
+		})
+	}
+}
