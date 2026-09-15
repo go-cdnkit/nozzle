@@ -2,8 +2,10 @@ package cloudflare
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 
 	"github.com/go-cdnkit/nozzle"
@@ -15,6 +17,12 @@ type Status uint8
 const (
 	// NotAttempted means the operation was not handed to the HTTP client.
 	NotAttempted Status = iota
+	// Accepted means the API confirmed acceptance, not global cache invalidation.
+	Accepted
+	// Rejected means the API explicitly refused the operation.
+	Rejected
+	// Indeterminate means submission began without a usable confirmation.
+	Indeterminate
 )
 
 // OperationResult associates an execution outcome with independently owned targets.
@@ -39,7 +47,8 @@ func (e *OperationError) Unwrap() error {
 	return e.Err
 }
 
-// Execute returns no results for an empty plan.
+// Execute validates a snapshot of the whole plan before submitting operations in order.
+// It returns all operation results, including unattempted ones, on the first error.
 func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
 	if plan == nil {
 		return nil, errors.New("cloudflare: nil execution plan")
@@ -60,10 +69,45 @@ func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationR
 			return results, &OperationError{Index: i, Err: err}
 		}
 	}
-	if len(results) > 0 {
+	for i := range results {
 		if err := ctx.Err(); err != nil {
-			return results, err
+			return results, &OperationError{Index: i, Err: err}
+		}
+		status, httpStatus, err := p.executeOperation(ctx, results[i].Operation)
+		results[i].Status = status
+		results[i].HTTPStatus = httpStatus
+		if err != nil {
+			return results, &OperationError{Index: i, Err: err}
 		}
 	}
 	return results, nil
+}
+
+func (p *Provider) executeOperation(ctx context.Context, operation nozzle.Operation) (Status, int, error) {
+	req, err := newBatchPurgeRequest(ctx, p.config.ZoneID, p.config.APIToken, operation.URLs)
+	if err != nil {
+		return NotAttempted, 0, err
+	}
+	resp, err := p.config.HTTPClient.Do(req)
+	if err != nil {
+		return Indeterminate, 0, err
+	}
+	defer func() {
+		// The complete response determines the outcome; Close releases resources.
+		_ = resp.Body.Close()
+	}()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Indeterminate, resp.StatusCode, err
+	}
+	var response struct {
+		Success bool `json:"success"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return Indeterminate, resp.StatusCode, errors.New("invalid purge response")
+	}
+	if !response.Success || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return Indeterminate, resp.StatusCode, errors.New("purge acceptance was not confirmed")
+	}
+	return Accepted, resp.StatusCode, nil
 }

@@ -2,12 +2,16 @@ package cloudflare
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/go-cdnkit/nozzle"
 )
@@ -136,5 +140,58 @@ func TestCloudflareExecutePreservesPreflightErrorLocation(t *testing.T) {
 	}
 	if len(results) != 2 || results[0].Status != NotAttempted || results[1].Status != NotAttempted || calls.Load() != 0 {
 		t.Fatalf("results = %#v, calls = %d", results, calls.Load())
+	}
+}
+
+func TestCloudflareExecuteSendsExactURLBatch(t *testing.T) {
+	urls := []string{"https://EXAMPLE.com/A%2fb?b=2&a=1&a=3", "https://example.com/path?"}
+	var calls atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Method != http.MethodPost || r.Host != "api.cloudflare.com" || r.URL.Path != "/client/v4/zones/0123456789abcdef0123456789abcdef/purge_cache" || r.URL.RawQuery != "" {
+			t.Errorf("unexpected request: %s %s %s", r.Method, r.Host, r.URL)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Error("bearer token differs")
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Error("content type differs")
+		}
+		if r.Header.Get("Idempotency-Key") != "" || r.Header.Get("X-Idempotency-Key") != "" {
+			t.Error("unexpected retry-enabling header")
+		}
+		var body map[string][]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if len(body) != 1 || !reflect.DeepEqual(body["files"], urls) {
+			t.Errorf("body = %#v", body)
+		}
+		if _, err := io.WriteString(w, `{"success":true,"errors":[],"result":{"id":"operation-id"}}`); err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client := server.Client()
+	transport := client.Transport.(*http.Transport)
+	transport.TLSClientConfig.ServerName = "example.com"
+	transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}
+	client.Timeout = 5 * time.Second
+	provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: client, MaxURLsPerRequest: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := provider.Plan(urls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := provider.Execute(t.Context(), plan)
+	if err != nil || len(results) != 1 || calls.Load() != 1 {
+		t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
+	}
+	if results[0].Status != Accepted || results[0].HTTPStatus != http.StatusOK || !reflect.DeepEqual(results[0].Operation, plan.Operations[0]) {
+		t.Fatalf("result = %#v", results[0])
 	}
 }

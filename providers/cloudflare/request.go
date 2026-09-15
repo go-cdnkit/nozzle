@@ -41,3 +41,21 @@ func newPurgeRequest(
 
 	return req, nil
 }
+
+// newBatchPurgeRequest preserves the supplied URL order and duplicate occurrences.
+func newBatchPurgeRequest(ctx context.Context, zoneID, apiToken string, urls []string) (*http.Request, error) {
+	body, err := json.Marshal(struct {
+		Files []string `json:"files"`
+	}{Files: urls})
+	if err != nil {
+		return nil, err
+	}
+	endpoint := "https://api.cloudflare.com/client/v4/zones/" + zoneID + "/purge_cache"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiToken)
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
