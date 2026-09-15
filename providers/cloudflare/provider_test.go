@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/go-cdnkit/nozzle"
 )
 
 func TestNewValidCloudflareConfiguration(t *testing.T) {
@@ -113,5 +115,17 @@ func TestCloudflarePlanDoesNotPerformNetworkIO(t *testing.T) {
 	}
 	if calls.Load() != 0 {
 		t.Fatal("planning attempted network access")
+	}
+}
+
+func TestCloudflarePlanRejectsInvalidInputAtomically(t *testing.T) {
+	provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: &http.Client{}, MaxURLsPerRequest: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := provider.Plan([]string{"https://example.com/valid", "/relative"})
+	var invalid *nozzle.InvalidTargetError
+	if plan != nil || !errors.As(err, &invalid) || invalid.Index != 1 {
+		t.Fatalf("plan = %#v, error = %v", plan, err)
 	}
 }
