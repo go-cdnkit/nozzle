@@ -609,3 +609,55 @@ func TestCloudflareExecuteDoesNotFollowRedirects(t *testing.T) {
 		})
 	}
 }
+
+func TestCloudflareExecuteSnapshotsTargetsBeforeSending(t *testing.T) {
+	plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}, {URLs: []string{"https://example.com/b"}}}}
+	requests := make(chan []string, 2)
+	var calls atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Files []string `json:"files"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if calls.Add(1) == 1 {
+			plan.Operations[0].URLs[0] = "https://example.com/edited-first"
+			plan.Operations[1].URLs[0] = "https://example.com/edited-second"
+		}
+		select {
+		case requests <- body.Files:
+		default:
+			t.Error("extra request")
+		}
+		if _, err := io.WriteString(w, `{"success":true}`); err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client := server.Client()
+	transport := client.Transport.(*http.Transport)
+	transport.TLSClientConfig.ServerName = "example.com"
+	transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}
+	client.Timeout = 5 * time.Second
+	provider, err := New(Config{ZoneID: "0123456789abcdef0123456789abcdef", APIToken: "test-token", HTTPClient: client, MaxURLsPerRequest: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := provider.Execute(t.Context(), plan)
+	if err != nil || len(results) != 2 || calls.Load() != 2 || len(requests) != 2 {
+		t.Fatalf("results = %#v, error = %v", results, err)
+	}
+	want := [][]string{{"https://example.com/a"}, {"https://example.com/b"}}
+	for i, result := range results {
+		if result.Status != Accepted || !reflect.DeepEqual(result.Operation.URLs, want[i]) || !reflect.DeepEqual(<-requests, want[i]) {
+			t.Fatalf("operation %d differs: %#v", i, result)
+		}
+	}
+	results[0].Operation.URLs[0] = "https://example.com/result-edit"
+	if plan.Operations[0].URLs[0] != "https://example.com/edited-first" || results[1].Operation.URLs[0] != "https://example.com/b" {
+		t.Fatal("result storage aliases caller or another result")
+	}
+}
