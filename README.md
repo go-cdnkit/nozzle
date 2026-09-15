@@ -6,11 +6,13 @@
 
 A small Go library for purging CDN caches with interchangeable providers.
 
-> Under development. Offline Cloudflare URL planning is available; purge execution and releases are not.
+> Under development. Cloudflare URL planning and sequential purge execution are available; no releases yet.
 
 ## Installation and usage
 
 Coming with the first release.
+
+See [Cloudflare](docs/cloudflare.md) for the current API and result semantics.
 
 ## Contributing
 

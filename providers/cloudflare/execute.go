@@ -49,6 +49,10 @@ func (e *OperationError) Unwrap() error {
 
 // Execute validates a snapshot of the whole plan before submitting operations in order.
 // It returns all operation results, including unattempted ones, on the first error.
+// A nil plan fails; an empty plan succeeds without network I/O. The caller must
+// provide a non-nil context and must not mutate the plan during snapshotting.
+// Execution does not follow redirects or schedule retries. Accepted confirms API
+// acceptance only, not completion of cache invalidation.
 func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
 	if plan == nil {
 		return nil, errors.New("cloudflare: nil execution plan")

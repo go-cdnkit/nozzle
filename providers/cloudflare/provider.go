@@ -1,4 +1,4 @@
-// Package cloudflare provides offline planning for Cloudflare URL purges.
+// Package cloudflare provides offline planning and sequential execution of Cloudflare URL purges.
 package cloudflare
 
 import (
@@ -30,7 +30,8 @@ type Provider struct {
 // New validates configuration and constructs a provider without network I/O.
 // It does not verify credentials, zone ownership or account request limits.
 // Configuration errors do not include the supplied credentials.
-// The HTTP client remains caller-owned and is neither cloned nor modified.
+// New retains the caller-owned HTTP client without cloning or modifying it.
+// Execute uses a shallow copy to disable redirects while sharing its transport and jar.
 func New(config Config) (*Provider, error) {
 	if len(config.ZoneID) == 0 || len(config.ZoneID) > 32 {
 		return nil, errors.New("cloudflare: zone ID length is outside 1..32 bytes")
