@@ -3,6 +3,7 @@ package cloudflare
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/go-cdnkit/nozzle"
@@ -23,6 +24,21 @@ type OperationResult struct {
 	HTTPStatus int
 }
 
+// OperationError identifies the zero-based operation index and preserves its cause.
+// A nested nozzle.InvalidTargetError identifies the URL within that operation.
+type OperationError struct {
+	Index int
+	Err   error
+}
+
+func (e *OperationError) Error() string {
+	return fmt.Sprintf("cloudflare: operation %d: %v", e.Index, e.Err)
+}
+
+func (e *OperationError) Unwrap() error {
+	return e.Err
+}
+
 // Execute returns no results for an empty plan.
 func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
 	if plan == nil {
@@ -32,16 +48,16 @@ func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationR
 	for i, operation := range plan.Operations {
 		results[i].Operation.URLs = slices.Clone(operation.URLs)
 	}
-	for _, result := range results {
+	for i, result := range results {
 		urls := result.Operation.URLs
 		if len(urls) == 0 {
-			return results, errors.New("cloudflare: empty operation")
+			return results, &OperationError{Index: i, Err: errors.New("empty operation")}
 		}
 		if len(urls) > p.config.MaxURLsPerRequest {
-			return results, errors.New("cloudflare: operation exceeds the configured URL limit")
+			return results, &OperationError{Index: i, Err: errors.New("operation exceeds the configured URL limit")}
 		}
 		if _, err := nozzle.PlanURLs(urls, p.config.MaxURLsPerRequest); err != nil {
-			return results, err
+			return results, &OperationError{Index: i, Err: err}
 		}
 	}
 	if len(results) > 0 {
