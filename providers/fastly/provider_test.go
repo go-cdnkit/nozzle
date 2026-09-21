@@ -24,3 +24,27 @@ func TestNewValidFastlyConfiguration(t *testing.T) {
 		t.Fatal("construction attempted network access")
 	}
 }
+
+func TestNewRejectsInvalidFastlyConfiguration(t *testing.T) {
+	tests := []struct {
+		name   string
+		token  string
+		client *http.Client
+	}{
+		{"empty token", "", &http.Client{}},
+		{"space", "test token", &http.Client{}},
+		{"tab", "test\ttoken", &http.Client{}},
+		{"newline", "test\r\nInjected: value", &http.Client{}},
+		{"control", "test\x00token", &http.Client{}},
+		{"unicode whitespace", "test\u00a0token", &http.Client{}},
+		{"nil client", "test-token", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider, err := New(Config{APIToken: tt.token, HTTPClient: tt.client})
+			if err == nil || provider != nil {
+				t.Fatalf("provider = %v, error = %v", provider, err)
+			}
+		})
+	}
+}
