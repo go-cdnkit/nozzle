@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -46,5 +47,21 @@ func TestNewRejectsInvalidFastlyConfiguration(t *testing.T) {
 				t.Fatalf("provider = %v, error = %v", provider, err)
 			}
 		})
+	}
+}
+
+func TestFastlyConfigurationErrorsDoNotEchoCredentials(t *testing.T) {
+	const secret = "private-token-marker"
+	for _, config := range []Config{
+		{APIToken: secret + "\n", HTTPClient: &http.Client{}},
+		{APIToken: secret, HTTPClient: nil},
+	} {
+		provider, err := New(config)
+		if err == nil || provider != nil {
+			t.Fatal("invalid configuration was accepted")
+		}
+		if strings.Contains(err.Error(), secret) {
+			t.Fatal("configuration error exposes credentials")
+		}
 	}
 }
