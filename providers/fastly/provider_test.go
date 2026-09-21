@@ -134,3 +134,34 @@ func TestFastlyPlanRejectsInvalidInputAtomically(t *testing.T) {
 		}
 	}
 }
+
+func TestFastlyPlanPreservesExactTargetsAndOwnership(t *testing.T) {
+	provider, err := New(Config{APIToken: "test-token", HTTPClient: &http.Client{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"https://EXAMPLE.com/A%2fb?b=2&a=1&a=3", "http://example.com/path?", "https://EXAMPLE.com/A%2fb?b=2&a=1&a=3"}
+	urls := append([]string(nil), want...)
+	first, err := provider.Plan(urls)
+	if err != nil || first == nil || len(first.Operations) != len(want) {
+		t.Fatalf("plan = %#v, error = %v", first, err)
+	}
+	for i, operation := range first.Operations {
+		if len(operation.URLs) != 1 || operation.URLs[0] != want[i] {
+			t.Fatalf("operation %d = %#v", i, operation)
+		}
+	}
+	urls[0] = "https://example.com/input-edit"
+	if first.Operations[0].URLs[0] != want[0] {
+		t.Fatal("input mutation changed planned targets")
+	}
+	second, err := provider.Plan(want)
+	if err != nil || second == nil || len(second.Operations) != len(want) || len(second.Operations[0].URLs) != 1 {
+		t.Fatalf("second plan = %#v, error = %v", second, err)
+	}
+	first.Operations[0].URLs[0] = "https://example.com/plan-edit"
+	first.Operations[0].URLs = append(first.Operations[0].URLs, "https://example.com/appended")
+	if first.Operations[1].URLs[0] != want[1] || first.Operations[2].URLs[0] != want[2] || second.Operations[0].URLs[0] != want[0] || want[0] != "https://EXAMPLE.com/A%2fb?b=2&a=1&a=3" {
+		t.Fatal("plan storage aliases input, another operation or another plan")
+	}
+}
