@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/go-cdnkit/nozzle"
 )
 
 func TestNewValidFastlyConfiguration(t *testing.T) {
@@ -113,5 +115,22 @@ func TestFastlyPlanIsOfflineAndHandlesEmptyInput(t *testing.T) {
 	}
 	if calls.Load() != 0 {
 		t.Fatal("offline planning attempted network access")
+	}
+}
+
+func TestFastlyPlanRejectsInvalidInputAtomically(t *testing.T) {
+	provider, err := New(Config{APIToken: "test-token", HTTPClient: &http.Client{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"", "/private-marker", "ftp://example.com/private-marker", "https:///private-marker", "https://example.com/%zz", "https://example.com/private marker", "https://user:private-marker@example.com/a", "https://example.com/private-marker#"} {
+		plan, err := provider.Plan([]string{"https://example.com/valid", target})
+		var invalid *nozzle.InvalidTargetError
+		if plan != nil || !errors.As(err, &invalid) || invalid.Index != 1 {
+			t.Fatalf("plan = %#v, error = %v", plan, err)
+		}
+		if strings.Contains(err.Error(), "private-marker") {
+			t.Fatal("error echoes target data")
+		}
 	}
 }
