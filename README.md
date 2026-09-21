@@ -13,6 +13,7 @@ A small Go library for purging CDN caches with interchangeable providers.
 Coming with the first release.
 
 See [Cloudflare](docs/cloudflare.md) for the current API and result semantics.
+[Fastly](docs/fastly.md) currently supports offline URL planning only.
 
 ## Contributing
 
