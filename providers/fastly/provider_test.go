@@ -90,3 +90,28 @@ func TestFastlyPlanUsesOneURLPerOperation(t *testing.T) {
 		})
 	}
 }
+
+func TestFastlyPlanIsOfflineAndHandlesEmptyInput(t *testing.T) {
+	var calls atomic.Int32
+	transport := &http.Transport{DialContext: func(context.Context, string, string) (net.Conn, error) {
+		calls.Add(1)
+		return nil, errors.New("network access is forbidden")
+	}}
+	t.Cleanup(transport.CloseIdleConnections)
+	provider, err := New(Config{APIToken: "test-token", HTTPClient: &http.Client{Transport: transport}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, urls := range [][]string{nil, {}, {"https://example.com/a"}} {
+		plan, err := provider.Plan(urls)
+		if err != nil || plan == nil || len(plan.Operations) != len(urls) {
+			t.Fatalf("plan = %#v, error = %v", plan, err)
+		}
+	}
+	if plan, err := provider.Plan([]string{"/relative"}); err == nil || plan != nil {
+		t.Fatalf("plan = %#v, error = %v", plan, err)
+	}
+	if calls.Load() != 0 {
+		t.Fatal("offline planning attempted network access")
+	}
+}
