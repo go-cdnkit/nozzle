@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"unicode"
+
+	"github.com/go-cdnkit/nozzle"
 )
 
 // Config holds explicit Fastly configuration. No values are discovered or defaulted.
@@ -37,4 +39,12 @@ func New(config Config) (*Provider, error) {
 	}
 
 	return &Provider{config: config}, nil
+}
+
+// Plan validates exact URLs and creates one operation per URL without network I/O.
+// It preserves the input and error semantics of nozzle.PlanURLs, including duplicates.
+// The returned plan owns its URL slices but remains editable and is not bound to
+// this provider. Planning does not verify Fastly routing or cache-key coverage.
+func (p *Provider) Plan(urls []string) (*nozzle.Plan, error) {
+	return nozzle.PlanURLs(urls, 1)
 }

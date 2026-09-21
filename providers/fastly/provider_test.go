@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -63,5 +64,29 @@ func TestFastlyConfigurationErrorsDoNotEchoCredentials(t *testing.T) {
 		if strings.Contains(err.Error(), secret) {
 			t.Fatal("configuration error exposes credentials")
 		}
+	}
+}
+
+func TestFastlyPlanUsesOneURLPerOperation(t *testing.T) {
+	provider, err := New(Config{APIToken: "test-token", HTTPClient: &http.Client{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, count := range []int{1, 2, 501} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			urls := make([]string, count)
+			for i := range urls {
+				urls[i] = "https://example.com/item/" + strconv.Itoa(i)
+			}
+			plan, err := provider.Plan(urls)
+			if err != nil || plan == nil || len(plan.Operations) != count {
+				t.Fatalf("plan = %#v, error = %v", plan, err)
+			}
+			for i, operation := range plan.Operations {
+				if len(operation.URLs) != 1 || operation.URLs[0] != urls[i] {
+					t.Fatalf("operation %d = %#v", i, operation)
+				}
+			}
+		})
 	}
 }
