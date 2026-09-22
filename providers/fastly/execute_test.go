@@ -250,3 +250,46 @@ func TestFastlyExecuteAcceptsOptionalMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestFastlyExecutePreservesOperationOrder(t *testing.T) {
+	requests := make(chan string, 3)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case requests <- r.RequestURI:
+		default:
+			t.Error("extra request")
+		}
+		if _, err := io.WriteString(w, `{"status":"ok"}`); err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client := server.Client()
+	transport := client.Transport.(*http.Transport)
+	transport.TLSClientConfig.ServerName = "example.com"
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if network != "tcp" || address != "api.fastly.com:443" {
+			return nil, errors.New("unexpected dial destination")
+		}
+		return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}
+	client.Timeout = 5 * time.Second
+	provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &nozzle.Plan{Operations: []nozzle.Operation{
+		{URLs: []string{"https://example.com/a"}},
+		{URLs: []string{"https://example.com/a"}},
+		{URLs: []string{"https://example.com/c"}},
+	}}
+	results, err := provider.Execute(t.Context(), plan)
+	if err != nil || len(results) != 3 || len(requests) != 3 {
+		t.Fatalf("results = %#v, error = %v, requests = %d", results, err, len(requests))
+	}
+	for i, result := range results {
+		if result.Status != Accepted || result.HTTPStatus != http.StatusOK || !reflect.DeepEqual(result.Operation, plan.Operations[i]) || <-requests != "/purge/"+plan.Operations[i].URLs[0] {
+			t.Fatalf("operation %d differs", i)
+		}
+	}
+}
