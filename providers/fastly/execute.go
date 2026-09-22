@@ -3,6 +3,7 @@ package fastly
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/go-cdnkit/nozzle"
@@ -29,6 +30,22 @@ type OperationResult struct {
 	HTTPStatus int
 }
 
+// OperationError identifies the zero-based operation index and preserves its cause.
+// Its text omits the cause, which may contain URLs or credentials. Inspect Err or
+// use errors.Is/errors.As explicitly when those diagnostics are needed.
+type OperationError struct {
+	Index int
+	Err   error
+}
+
+func (e *OperationError) Error() string {
+	return fmt.Sprintf("fastly: operation %d failed", e.Index)
+}
+
+func (e *OperationError) Unwrap() error {
+	return e.Err
+}
+
 // Execute validates a snapshot of the whole plan before any network I/O.
 func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
 	if plan == nil {
@@ -38,17 +55,17 @@ func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationR
 	for i, operation := range plan.Operations {
 		results[i].Operation.URLs = slices.Clone(operation.URLs)
 	}
-	for _, result := range results {
+	for i, result := range results {
 		if len(result.Operation.URLs) != 1 {
-			return results, errors.New("fastly: operation does not contain exactly one URL")
+			return results, &OperationError{Index: i, Err: errors.New("operation does not contain exactly one URL")}
 		}
 		if _, err := nozzle.PlanURLs(result.Operation.URLs, 1); err != nil {
-			return results, err
+			return results, &OperationError{Index: i, Err: err}
 		}
 	}
 	if len(results) != 0 {
 		if err := ctx.Err(); err != nil {
-			return results, err
+			return results, &OperationError{Index: 0, Err: err}
 		}
 		return results, errors.New("fastly: non-empty execution is not implemented yet")
 	}

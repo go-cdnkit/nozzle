@@ -114,3 +114,27 @@ func TestFastlyExecuteHonorsPreCanceledContext(t *testing.T) {
 		}
 	}
 }
+
+func TestFastlyExecutePreservesPreflightErrorLocation(t *testing.T) {
+	var calls atomic.Int32
+	transport := &http.Transport{DialContext: func(context.Context, string, string) (net.Conn, error) {
+		calls.Add(1)
+		return nil, errors.New("network access is forbidden")
+	}}
+	t.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport}
+	provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/valid"}}, {URLs: []string{"/relative"}}}}
+	results, err := provider.Execute(t.Context(), plan)
+	var operationErr *OperationError
+	var invalid *nozzle.InvalidTargetError
+	if !errors.As(err, &operationErr) || operationErr.Index != 1 || !errors.As(err, &invalid) || invalid.Index != 0 {
+		t.Fatalf("error = %v", err)
+	}
+	if len(results) != 2 || results[0].Status != NotAttempted || results[1].Status != NotAttempted || calls.Load() != 0 {
+		t.Fatalf("results = %#v, calls = %d", results, calls.Load())
+	}
+}
