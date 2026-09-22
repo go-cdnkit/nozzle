@@ -2,8 +2,11 @@ package fastly
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"slices"
 
 	"github.com/go-cdnkit/nozzle"
@@ -46,7 +49,11 @@ func (e *OperationError) Unwrap() error {
 	return e.Err
 }
 
-// Execute validates a snapshot of the whole plan before any network I/O.
+// Execute validates a snapshot of the whole plan before submitting operations in order.
+// It returns every operation's result, including unattempted ones, on the first error.
+// A nil plan fails; an empty plan succeeds without network I/O. The caller must
+// supply a non-nil context and must not mutate the plan during snapshotting.
+// Accepted confirms API acceptance only, not completion of cache invalidation.
 func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
 	if plan == nil {
 		return nil, errors.New("fastly: nil execution plan")
@@ -63,11 +70,52 @@ func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationR
 			return results, &OperationError{Index: i, Err: err}
 		}
 	}
-	if len(results) != 0 {
+	for i := range results {
 		if err := ctx.Err(); err != nil {
-			return results, &OperationError{Index: 0, Err: err}
+			return results, &OperationError{Index: i, Err: err}
 		}
-		return results, errors.New("fastly: non-empty execution is not implemented yet")
+		status, httpStatus, err := p.executeOperation(ctx, results[i].Operation.URLs[0])
+		results[i].Status = status
+		results[i].HTTPStatus = httpStatus
+		if err != nil {
+			return results, &OperationError{Index: i, Err: err}
+		}
 	}
 	return results, nil
+}
+
+func (p *Provider) executeOperation(ctx context.Context, target string) (Status, int, error) {
+	// Keep the destination fixed without normalizing the embedded purge target.
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.fastly.com/purge/"+target, nil)
+	if err != nil {
+		return NotAttempted, 0, err
+	}
+	req.Header.Set("Fastly-Key", p.config.APIToken)
+	req.Header.Set("Accept", "application/json")
+	client := *p.config.HTTPClient
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return Indeterminate, 0, err
+	}
+	defer func() {
+		// The complete response determines the outcome; Close releases resources.
+		_ = resp.Body.Close()
+	}()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Indeterminate, resp.StatusCode, err
+	}
+	var response struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return Indeterminate, resp.StatusCode, errors.New("invalid purge response")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || response.Status != "ok" {
+		return Indeterminate, resp.StatusCode, errors.New("purge acceptance was not confirmed")
+	}
+	return Accepted, resp.StatusCode, nil
 }
