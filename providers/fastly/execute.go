@@ -3,6 +3,7 @@ package fastly
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/go-cdnkit/nozzle"
 )
@@ -28,13 +29,25 @@ type OperationResult struct {
 	HTTPStatus int
 }
 
-// Execute handles an empty execution plan without network I/O.
+// Execute validates a snapshot of the whole plan before any network I/O.
 func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
 	if plan == nil {
 		return nil, errors.New("fastly: nil execution plan")
 	}
-	if len(plan.Operations) != 0 {
-		return nil, errors.New("fastly: non-empty execution is not implemented yet")
+	results := make([]OperationResult, len(plan.Operations))
+	for i, operation := range plan.Operations {
+		results[i].Operation.URLs = slices.Clone(operation.URLs)
 	}
-	return nil, nil
+	for _, result := range results {
+		if len(result.Operation.URLs) != 1 {
+			return results, errors.New("fastly: operation does not contain exactly one URL")
+		}
+		if _, err := nozzle.PlanURLs(result.Operation.URLs, 1); err != nil {
+			return results, err
+		}
+	}
+	if len(results) != 0 {
+		return results, errors.New("fastly: non-empty execution is not implemented yet")
+	}
+	return results, nil
 }
