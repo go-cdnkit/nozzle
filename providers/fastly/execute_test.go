@@ -492,3 +492,28 @@ func TestFastlyExecuteRetainsPartialResults(t *testing.T) {
 		})
 	}
 }
+
+func TestFastlyExecuteCancellationDuringSubmission(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var calls atomic.Int32
+	transport := &http.Transport{DialContext: func(context.Context, string, string) (net.Conn, error) {
+		calls.Add(1)
+		cancel()
+		return nil, context.Canceled
+	}}
+	t.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport}
+	provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}, {URLs: []string{"https://example.com/b"}}}}
+	results, err := provider.Execute(ctx, plan)
+	if !errors.Is(err, context.Canceled) || len(results) != 2 || calls.Load() != 1 {
+		t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
+	}
+	if results[0].Status != Indeterminate || results[1].Status != NotAttempted {
+		t.Fatalf("results = %#v", results)
+	}
+}
