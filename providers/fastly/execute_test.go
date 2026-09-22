@@ -574,3 +574,39 @@ func TestFastlyExecuteBoundsAndCompletesResponseReading(t *testing.T) {
 		})
 	}
 }
+
+func TestFastlyExecuteHonorsClientTimeout(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			t.Error(err)
+			return
+		}
+		<-r.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+	client := server.Client()
+	transport := client.Transport.(*http.Transport)
+	transport.TLSClientConfig.ServerName = "example.com"
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if network != "tcp" || address != "api.fastly.com:443" {
+			return nil, errors.New("unexpected dial destination")
+		}
+		return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}
+	client.Timeout = 50 * time.Millisecond
+	provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}, {URLs: []string{"https://example.com/b"}}}}
+	results, err := provider.Execute(t.Context(), plan)
+	if !errors.Is(err, context.DeadlineExceeded) || len(results) != 2 {
+		t.Fatalf("results = %#v, error = %v", results, err)
+	}
+	if results[0].Status != Indeterminate || results[1].Status != NotAttempted {
+		t.Fatalf("results = %#v", results)
+	}
+	if client.Timeout != 50*time.Millisecond {
+		t.Fatal("caller timeout was changed")
+	}
+}
