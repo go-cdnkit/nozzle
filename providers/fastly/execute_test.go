@@ -332,3 +332,78 @@ func TestFastlyExecuteReportsExplicitRejection(t *testing.T) {
 		})
 	}
 }
+
+func TestFastlyExecuteDoesNotGuessAcceptance(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"empty", 200, ""},
+		{"HTML", 200, "<html>error</html>"},
+		{"missing status", 200, "{}"},
+		{"null status", 200, "{\"status\":null}"},
+		{"wrong type", 200, "{\"status\":true}"},
+		{"unknown status", 200, "{\"status\":\"success\"}"},
+		{"case sensitive", 200, "{\"status\":\"OK\"}"},
+		{"trailing JSON", 200, "{\"status\":\"ok\"}{}"},
+		{"trailing garbage", 200, "{\"status\":\"ok\"}broken"},
+		{"duplicate status", 200, "{\"status\":\"error\",\"status\":\"ok\"}"},
+		{"escaped duplicate", 200, "{\"status\":\"ok\",\"sta\\u0074us\":\"ok\"}"},
+		{"contradictory msg", 200, "{\"status\":\"ok\",\"msg\":\"failure\"}"},
+		{"contradictory detail", 200, "{\"status\":\"ok\",\"detail\":\"failure\"}"},
+		{"wrong msg type", 200, "{\"status\":\"ok\",\"msg\":42}"},
+		{"duplicate msg", 403, "{\"msg\":\"denied\",\"msg\":\"denied\"}"},
+		{"wrong detail type", 403, "{\"msg\":\"denied\",\"detail\":{}}"},
+		{"server error", 500, "{\"msg\":\"rejected\"}"},
+		{"server positive", 503, "{\"status\":\"ok\"}"},
+		{"client positive", 403, "{\"status\":\"ok\"}"},
+		{"rate limit without envelope", 429, ""},
+		{"request timeout", 408, "{\"msg\":\"rejected\"}"},
+		{"redirect", 302, "{\"status\":\"ok\"}"},
+		{"JSON API error", 403, "{\"errors\":[{\"title\":\"forbidden\"}]}"},
+		{"problem detail", 403, "{\"status\":403,\"title\":\"forbidden\"}"},
+		{"nonobject", 200, "[{\"status\":\"ok\"}]"},
+		{"duplicate detail", 200, "{\"status\":\"ok\",\"detail\":\"\",\"detail\":\"\"}"},
+		{"contradictory errors", 200, `{"status":"ok","errors":[{"title":"failure"}]}`},
+		{"malformed errors", 200, `{"status":"ok","errors":"failure"}`},
+		{"duplicate errors", 200, `{"status":"ok","errors":[],"errors":[]}`},
+		{"empty negative", 403, "{\"msg\":\"\"}"},
+		{"negative in 2xx", 200, "{\"msg\":\"rejected\"}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(tt.status)
+				if _, err := io.WriteString(w, tt.body); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client := server.Client()
+			transport := client.Transport.(*http.Transport)
+			transport.TLSClientConfig.ServerName = "example.com"
+			transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+				if network != "tcp" || address != "api.fastly.com:443" {
+					return nil, errors.New("unexpected dial destination")
+				}
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}
+			client.Timeout = 5 * time.Second
+			provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}, {URLs: []string{"https://example.com/b"}}}}
+			results, err := provider.Execute(t.Context(), plan)
+			if err == nil || len(results) != 2 || calls.Load() != 1 {
+				t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
+			}
+			if results[0].Status != Indeterminate || results[0].HTTPStatus != tt.status || results[1].Status != NotAttempted {
+				t.Fatalf("results = %#v", results)
+			}
+		})
+	}
+}

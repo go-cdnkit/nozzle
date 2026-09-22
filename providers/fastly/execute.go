@@ -2,7 +2,6 @@ package fastly
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -108,18 +107,6 @@ func (p *Provider) executeOperation(ctx context.Context, target string) (Status,
 	if err != nil {
 		return Indeterminate, resp.StatusCode, err
 	}
-	var response struct {
-		Status  string `json:"status"`
-		Message string `json:"msg"`
-	}
-	if err := json.Unmarshal(body, &response); err != nil {
-		return Indeterminate, resp.StatusCode, errors.New("invalid purge response")
-	}
-	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout && response.Status == "" && response.Message != "" {
-		return Rejected, resp.StatusCode, errors.New("purge operation was rejected")
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 || response.Status != "ok" {
-		return Indeterminate, resp.StatusCode, errors.New("purge acceptance was not confirmed")
-	}
-	return Accepted, resp.StatusCode, nil
+	status, err := parsePurgeResponse(body, resp.StatusCode)
+	return status, resp.StatusCode, err
 }
