@@ -1,3 +1,3 @@
-// Package nozzle is intended to provide CDN cache purging with interchangeable
-// providers. It is under development; no provider API is available yet.
+// Package nozzle builds inspectable plans for exact-URL cache invalidation.
+// Provider packages execute those plans against their CDN APIs.
 package nozzle

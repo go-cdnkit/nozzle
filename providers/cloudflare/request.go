@@ -7,37 +7,26 @@ import (
 	"net/http"
 )
 
-// newPurgeRequest constructs a single-URL purge request without sending it.
 func newPurgeRequest(
 	ctx context.Context,
 	zoneID, apiToken, targetURL string,
 ) (*http.Request, error) {
-	payload := struct {
+	return newBatchPurgeRequest(ctx, zoneID, apiToken, []string{targetURL})
+}
+
+func newBatchPurgeRequest(ctx context.Context, zoneID, apiToken string, urls []string) (*http.Request, error) {
+	body, err := json.Marshal(struct {
 		Files []string `json:"files"`
-	}{
-		Files: []string{targetURL},
-	}
-
-	body, err := json.Marshal(payload)
+	}{Files: urls})
 	if err != nil {
 		return nil, err
 	}
-
-	endpoint := "https://api.cloudflare.com/client/v4/zones/" +
-		zoneID + "/purge_cache"
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		endpoint,
-		bytes.NewReader(body),
-	)
+	endpoint := "https://api.cloudflare.com/client/v4/zones/" + zoneID + "/purge_cache"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-
 	req.Header.Set("Authorization", "Bearer "+apiToken)
 	req.Header.Set("Content-Type", "application/json")
-
 	return req, nil
 }
