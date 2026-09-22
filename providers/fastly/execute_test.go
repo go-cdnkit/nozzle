@@ -293,3 +293,42 @@ func TestFastlyExecutePreservesOperationOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestFastlyExecuteReportsExplicitRejection(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusTooManyRequests} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Retry-After", "60")
+				w.WriteHeader(status)
+				if _, err := io.WriteString(w, `{"msg":"rejected","detail":"permission or quota failure"}`); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client := server.Client()
+			transport := client.Transport.(*http.Transport)
+			transport.TLSClientConfig.ServerName = "example.com"
+			transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+				if network != "tcp" || address != "api.fastly.com:443" {
+					return nil, errors.New("unexpected dial destination")
+				}
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}
+			client.Timeout = 5 * time.Second
+			provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}, {URLs: []string{"https://example.com/b"}}}}
+			results, err := provider.Execute(t.Context(), plan)
+			if err == nil || len(results) != 2 || calls.Load() != 1 {
+				t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
+			}
+			if results[0].Status != Rejected || results[0].HTTPStatus != status || results[1].Status != NotAttempted || results[1].HTTPStatus != 0 {
+				t.Fatalf("results = %#v", results)
+			}
+		})
+	}
+}
