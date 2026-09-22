@@ -6,14 +6,14 @@
 
 A small Go library for purging CDN caches with interchangeable providers.
 
-> Under development. Cloudflare URL planning and sequential purge execution are available; no releases yet.
+> Under development. Cloudflare and Fastly support URL planning and sequential purge execution; no releases yet.
 
 ## Installation and usage
 
 Coming with the first release.
 
-See [Cloudflare](docs/cloudflare.md) for the current API and result semantics.
-[Fastly](docs/fastly.md) currently supports offline URL planning only.
+See [Cloudflare](docs/cloudflare.md) and [Fastly](docs/fastly.md) for the current
+APIs and result semantics.
 
 ## Contributing
 

@@ -52,7 +52,8 @@ func (e *OperationError) Unwrap() error {
 // It returns every operation's result, including unattempted ones, on the first error.
 // A nil plan fails; an empty plan succeeds without network I/O. The caller must
 // supply a non-nil context and must not mutate the plan during snapshotting.
-// Accepted confirms API acceptance only, not completion of cache invalidation.
+// Execution does not follow redirects or schedule retries. Accepted confirms API
+// acceptance only, not completion of cache invalidation.
 func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
 	if plan == nil {
 		return nil, errors.New("fastly: nil execution plan")

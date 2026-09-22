@@ -1,4 +1,4 @@
-// Package fastly provides offline planning for Fastly URL purges.
+// Package fastly provides offline planning and sequential execution of Fastly URL purges.
 package fastly
 
 import (
