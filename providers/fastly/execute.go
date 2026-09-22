@@ -47,6 +47,9 @@ func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationR
 		}
 	}
 	if len(results) != 0 {
+		if err := ctx.Err(); err != nil {
+			return results, err
+		}
 		return results, errors.New("fastly: non-empty execution is not implemented yet")
 	}
 	return results, nil
