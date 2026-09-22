@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -744,5 +745,29 @@ func TestFastlyExecuteDoesNotEchoRemoteResponseBodies(t *testing.T) {
 				t.Fatal("error includes response or credential data")
 			}
 		})
+	}
+}
+
+func TestFastlyExecuteRedactsTransportDiagnostics(t *testing.T) {
+	const secret = "private-target-marker"
+	sentinel := errors.New("private-transport-marker test-token")
+	transport := &http.Transport{DialContext: func(context.Context, string, string) (net.Conn, error) { return nil, sentinel }}
+	t.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport}
+	provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a?secret=" + secret}}}}
+	results, err := provider.Execute(t.Context(), plan)
+	var operationErr *OperationError
+	var urlErr *url.Error
+	if !errors.Is(err, sentinel) || !errors.As(err, &operationErr) || operationErr.Index != 0 || !errors.As(err, &urlErr) || len(results) != 1 || results[0].Status != Indeterminate {
+		t.Fatalf("results = %#v, error = %v", results, err)
+	}
+	for _, value := range []string{secret, "private-transport-marker", "test-token", "https://example.com"} {
+		if strings.Contains(err.Error(), value) {
+			t.Fatal("top-level error exposes sensitive diagnostics")
+		}
 	}
 }
