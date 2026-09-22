@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -206,5 +207,46 @@ func TestFastlyExecuteSendsExactURLRequests(t *testing.T) {
 		if result.Status != Accepted || result.HTTPStatus != 200 || !reflect.DeepEqual(result.Operation, plan.Operations[i]) {
 			t.Fatalf("result %d = %#v", i, result)
 		}
+	}
+}
+
+func TestFastlyExecuteAcceptsOptionalMetadata(t *testing.T) {
+	tests := []struct {
+		status int
+		body   string
+	}{
+		{200, `{"status":"ok"}`},
+		{201, `{"status":"ok","id":null,"msg":null,"detail":"","errors":[]}`},
+		{202, `{"status":"ok","id":"purge-id","extra":{"future":"value"}}`},
+	}
+	for _, tt := range tests {
+		t.Run(strconv.Itoa(tt.status), func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.status)
+				if _, err := io.WriteString(w, tt.body); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client := server.Client()
+			transport := client.Transport.(*http.Transport)
+			transport.TLSClientConfig.ServerName = "example.com"
+			transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+				if network != "tcp" || address != "api.fastly.com:443" {
+					return nil, errors.New("unexpected dial destination")
+				}
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}
+			client.Timeout = 5 * time.Second
+			provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}}}
+			results, err := provider.Execute(t.Context(), plan)
+			if err != nil || len(results) != 1 || results[0].Status != Accepted || results[0].HTTPStatus != tt.status {
+				t.Fatalf("results = %#v, error = %v", results, err)
+			}
+		})
 	}
 }
