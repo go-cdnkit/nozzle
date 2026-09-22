@@ -707,3 +707,42 @@ func TestFastlyExecuteSnapshotsTargetsBeforeSending(t *testing.T) {
 		t.Fatal("result storage aliases caller or another result")
 	}
 }
+
+func TestFastlyExecuteDoesNotEchoRemoteResponseBodies(t *testing.T) {
+	const secret = "private-response-marker"
+	for _, body := range []string{
+		`{"msg":"private-response-marker test-token"}`,
+		"<html>private-response-marker test-token</html>",
+	} {
+		t.Run(body[:1], func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if _, err := io.WriteString(w, body); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client := server.Client()
+			transport := client.Transport.(*http.Transport)
+			transport.TLSClientConfig.ServerName = "example.com"
+			transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+				if network != "tcp" || address != "api.fastly.com:443" {
+					return nil, errors.New("unexpected dial destination")
+				}
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}
+			client.Timeout = 5 * time.Second
+			provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a?secret=private-response-marker"}}}}
+			results, err := provider.Execute(t.Context(), plan)
+			if err == nil || len(results) != 1 {
+				t.Fatalf("results = %#v, error = %v", results, err)
+			}
+			if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "test-token") {
+				t.Fatal("error includes response or credential data")
+			}
+		})
+	}
+}
