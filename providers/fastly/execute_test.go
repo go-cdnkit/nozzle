@@ -430,3 +430,65 @@ func TestFastlyExecutePreservesTransportError(t *testing.T) {
 		t.Fatalf("results = %#v", results)
 	}
 }
+
+func TestFastlyExecuteRetainsPartialResults(t *testing.T) {
+	for _, rejection := range []bool{true, false} {
+		t.Run(strconv.FormatBool(rejection), func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				n := calls.Add(1)
+				body := `{"status":"ok"}`
+				if n == 2 {
+					if rejection {
+						w.WriteHeader(http.StatusForbidden)
+						body = `{"msg":"rejected"}`
+					} else {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						body = "<html>unavailable</html>"
+					}
+				}
+				if _, err := io.WriteString(w, body); err != nil {
+					t.Error(err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client := server.Client()
+			transport := client.Transport.(*http.Transport)
+			transport.TLSClientConfig.ServerName = "example.com"
+			transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+				if network != "tcp" || address != "api.fastly.com:443" {
+					return nil, errors.New("unexpected dial destination")
+				}
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}
+			client.Timeout = 5 * time.Second
+			provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}, {URLs: []string{"https://example.com/b"}}, {URLs: []string{"https://example.com/c"}}}}
+			results, err := provider.Execute(t.Context(), plan)
+			if err == nil || len(results) != 3 || calls.Load() != 2 {
+				t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
+			}
+			var operationErr *OperationError
+			if !errors.As(err, &operationErr) || operationErr.Index != 1 {
+				t.Fatalf("error = %v", err)
+			}
+			want := Rejected
+			wantHTTP := http.StatusForbidden
+			if !rejection {
+				want = Indeterminate
+				wantHTTP = http.StatusServiceUnavailable
+			}
+			if results[0].Status != Accepted || results[0].HTTPStatus != 200 || results[1].Status != want || results[1].HTTPStatus != wantHTTP || results[2].Status != NotAttempted || results[2].HTTPStatus != 0 {
+				t.Fatalf("results = %#v", results)
+			}
+			for i, result := range results {
+				if !reflect.DeepEqual(result.Operation, plan.Operations[i]) {
+					t.Fatalf("result %d lost targets", i)
+				}
+			}
+		})
+	}
+}
