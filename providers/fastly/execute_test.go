@@ -658,3 +658,52 @@ func TestFastlyExecuteDoesNotFollowRedirects(t *testing.T) {
 		})
 	}
 }
+
+func TestFastlyExecuteSnapshotsTargetsBeforeSending(t *testing.T) {
+	plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}, {URLs: []string{"https://example.com/b"}}}}
+	requests := make(chan string, 2)
+	var calls atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			plan.Operations[0].URLs[0] = "https://example.com/edited-first"
+			plan.Operations[1].URLs[0] = "https://example.com/edited-second"
+		}
+		select {
+		case requests <- r.RequestURI:
+		default:
+			t.Error("extra request")
+		}
+		if _, err := io.WriteString(w, `{"status":"ok"}`); err != nil {
+			t.Error(err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client := server.Client()
+	transport := client.Transport.(*http.Transport)
+	transport.TLSClientConfig.ServerName = "example.com"
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if network != "tcp" || address != "api.fastly.com:443" {
+			return nil, errors.New("unexpected dial destination")
+		}
+		return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+	}
+	client.Timeout = 5 * time.Second
+	provider, err := New(Config{APIToken: "test-token", HTTPClient: client})
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := provider.Execute(t.Context(), plan)
+	if err != nil || len(results) != 2 || calls.Load() != 2 || len(requests) != 2 {
+		t.Fatalf("results = %#v, error = %v", results, err)
+	}
+	want := [][]string{{"https://example.com/a"}, {"https://example.com/b"}}
+	for i, result := range results {
+		if result.Status != Accepted || !reflect.DeepEqual(result.Operation.URLs, want[i]) || <-requests != "/purge/"+want[i][0] {
+			t.Fatalf("operation %d differs: %#v", i, result)
+		}
+	}
+	results[0].Operation.URLs[0] = "https://example.com/result-edit"
+	if plan.Operations[0].URLs[0] != "https://example.com/edited-first" || results[1].Operation.URLs[0] != "https://example.com/b" {
+		t.Fatal("result storage aliases caller or another result")
+	}
+}
