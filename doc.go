@@ -1,4 +1,3 @@
 // Package nozzle builds inspectable plans for exact-URL cache invalidation.
-// Planning validates and groups caller-supplied URLs without network requests.
-// Provider execution is not available yet.
+// Provider packages execute those plans against their CDN APIs.
 package nozzle

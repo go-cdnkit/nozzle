@@ -33,7 +33,6 @@ type OperationResult struct {
 }
 
 // OperationError identifies the zero-based operation index and preserves its cause.
-// A nested nozzle.InvalidTargetError identifies the URL within that operation.
 type OperationError struct {
 	Index int
 	Err   error
@@ -47,12 +46,11 @@ func (e *OperationError) Unwrap() error {
 	return e.Err
 }
 
-// Execute validates a snapshot of the whole plan before submitting operations in order.
-// It returns all operation results, including unattempted ones, on the first error.
-// A nil plan fails; an empty plan succeeds without network I/O. The caller must
-// provide a non-nil context and must not mutate the plan during snapshotting.
-// Execution does not follow redirects or schedule retries. Accepted confirms API
-// acceptance only, not completion of cache invalidation.
+// Execute validates a copy of the entire plan, then submits operations in order.
+// It stops on the first error, retaining every result, including unattempted work.
+// It neither follows redirects nor schedules retries.
+// A nil plan fails; an empty plan succeeds without I/O.
+// Provide a non-nil context and do not mutate the plan while it is being copied.
 func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
 	if plan == nil {
 		return nil, errors.New("cloudflare: nil execution plan")
@@ -101,7 +99,7 @@ func (p *Provider) executeOperation(ctx context.Context, operation nozzle.Operat
 		return Indeterminate, 0, err
 	}
 	defer func() {
-		// The complete response determines the outcome; Close releases resources.
+		// A close error does not change the response outcome.
 		_ = resp.Body.Close()
 	}()
 	const maxResponseBytes = 64 * 1024

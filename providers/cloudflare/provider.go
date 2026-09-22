@@ -9,7 +9,7 @@ import (
 	"github.com/go-cdnkit/nozzle"
 )
 
-// Config holds explicit Cloudflare configuration. No values are discovered or defaulted.
+// Config holds required Cloudflare settings.
 type Config struct {
 	// ZoneID is a non-empty ASCII alphanumeric identifier of at most 32 bytes.
 	ZoneID string
@@ -22,16 +22,13 @@ type Config struct {
 	MaxURLsPerRequest int
 }
 
-// Provider holds a copy of its configuration. Construct it with New.
+// Provider executes Cloudflare URL purges. Construct it with New.
 type Provider struct {
 	config Config
 }
 
-// New validates configuration and constructs a provider without network I/O.
+// New validates and copies config without network I/O.
 // It does not verify credentials, zone ownership or account request limits.
-// Configuration errors do not include the supplied credentials.
-// New retains the caller-owned HTTP client without cloning or modifying it.
-// Execute uses a shallow copy to disable redirects while sharing its transport and jar.
 func New(config Config) (*Provider, error) {
 	if len(config.ZoneID) == 0 || len(config.ZoneID) > 32 {
 		return nil, errors.New("cloudflare: zone ID length is outside 1..32 bytes")
@@ -59,10 +56,7 @@ func New(config Config) (*Provider, error) {
 	return &Provider{config: config}, nil
 }
 
-// Plan validates and groups exact URLs using the configured request capacity,
-// without network I/O. It preserves the input and error semantics of nozzle.PlanURLs.
-// The returned plan owns its URL slices, but remains editable and is not bound
-// to this provider. Planning does not verify zone membership or cache-key coverage.
+// Plan calls [nozzle.PlanURLs] with the configured MaxURLsPerRequest.
 func (p *Provider) Plan(urls []string) (*nozzle.Plan, error) {
 	return nozzle.PlanURLs(urls, p.config.MaxURLsPerRequest)
 }

@@ -33,8 +33,7 @@ type OperationResult struct {
 }
 
 // OperationError identifies the zero-based operation index and preserves its cause.
-// Its text omits the cause, which may contain URLs or credentials. Inspect Err or
-// use errors.Is/errors.As explicitly when those diagnostics are needed.
+// Its text omits the cause, which remains inspectable and may contain secrets.
 type OperationError struct {
 	Index int
 	Err   error
@@ -48,12 +47,11 @@ func (e *OperationError) Unwrap() error {
 	return e.Err
 }
 
-// Execute validates a snapshot of the whole plan before submitting operations in order.
-// It returns every operation's result, including unattempted ones, on the first error.
-// A nil plan fails; an empty plan succeeds without network I/O. The caller must
-// supply a non-nil context and must not mutate the plan during snapshotting.
-// Execution does not follow redirects or schedule retries. Accepted confirms API
-// acceptance only, not completion of cache invalidation.
+// Execute validates a copy of the entire plan, then submits operations in order.
+// It stops on the first error, retaining every result, including unattempted work.
+// It neither follows redirects nor schedules retries.
+// A nil plan fails; an empty plan succeeds without I/O.
+// Provide a non-nil context and do not mutate the plan while it is being copied.
 func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
 	if plan == nil {
 		return nil, errors.New("fastly: nil execution plan")
@@ -101,7 +99,7 @@ func (p *Provider) executeOperation(ctx context.Context, target string) (Status,
 		return Indeterminate, 0, err
 	}
 	defer func() {
-		// The complete response determines the outcome; Close releases resources.
+		// A close error does not change the response outcome.
 		_ = resp.Body.Close()
 	}()
 	const maxResponseBytes = 64 * 1024

@@ -7,8 +7,7 @@ import (
 	"io"
 )
 
-// parsePurgeResponse requires a complete, unambiguous acceptance envelope.
-// Remote response text is deliberately excluded from errors.
+// Errors omit remote response text to avoid exposing sensitive data.
 func parsePurgeResponse(body []byte) (bool, error) {
 	invalid := errors.New("invalid purge response")
 	decoder := json.NewDecoder(bytes.NewReader(body))

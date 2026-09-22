@@ -8,8 +8,7 @@ import (
 	"net/http"
 )
 
-// parsePurgeResponse classifies only complete, unambiguous Fastly envelopes.
-// Remote text is never included in generated errors.
+// Errors omit remote response text to avoid exposing sensitive data.
 func parsePurgeResponse(body []byte, httpStatus int) (Status, error) {
 	invalid := errors.New("invalid purge response")
 	decoder := json.NewDecoder(bytes.NewReader(body))

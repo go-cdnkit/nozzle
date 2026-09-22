@@ -7,7 +7,6 @@ import (
 	"net/http"
 )
 
-// newPurgeRequest constructs a single-URL purge request without sending it.
 func newPurgeRequest(
 	ctx context.Context,
 	zoneID, apiToken, targetURL string,
@@ -15,7 +14,6 @@ func newPurgeRequest(
 	return newBatchPurgeRequest(ctx, zoneID, apiToken, []string{targetURL})
 }
 
-// newBatchPurgeRequest preserves the supplied URL order and duplicate occurrences.
 func newBatchPurgeRequest(ctx context.Context, zoneID, apiToken string, urls []string) (*http.Request, error) {
 	body, err := json.Marshal(struct {
 		Files []string `json:"files"`
