@@ -11,27 +11,6 @@ import (
 	"github.com/go-cdnkit/nozzle"
 )
 
-// Status describes what is known about an operation's submission.
-type Status uint8
-
-const (
-	// NotAttempted means the operation was not handed to the HTTP client.
-	NotAttempted Status = iota
-	// Accepted means the API confirmed acceptance, not global cache invalidation.
-	Accepted
-	// Rejected means the API explicitly refused the operation.
-	Rejected
-	// Indeterminate means submission began without a usable confirmation.
-	Indeterminate
-)
-
-// OperationResult associates an execution outcome with independently owned targets.
-type OperationResult struct {
-	Operation  nozzle.Operation
-	Status     Status
-	HTTPStatus int
-}
-
 // OperationError identifies the zero-based operation index and preserves its cause.
 type OperationError struct {
 	Index int
@@ -51,11 +30,11 @@ func (e *OperationError) Unwrap() error {
 // It neither follows redirects nor schedules retries.
 // A nil plan fails; an empty plan succeeds without I/O.
 // Provide a non-nil context and do not mutate the plan while it is being copied.
-func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationResult, error) {
+func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]nozzle.OperationResult, error) {
 	if plan == nil {
 		return nil, errors.New("cloudflare: nil execution plan")
 	}
-	results := make([]OperationResult, len(plan.Operations))
+	results := make([]nozzle.OperationResult, len(plan.Operations))
 	for i, operation := range plan.Operations {
 		results[i].Operation.URLs = slices.Clone(operation.URLs)
 	}
@@ -85,10 +64,10 @@ func (p *Provider) Execute(ctx context.Context, plan *nozzle.Plan) ([]OperationR
 	return results, nil
 }
 
-func (p *Provider) executeOperation(ctx context.Context, operation nozzle.Operation) (Status, int, error) {
+func (p *Provider) executeOperation(ctx context.Context, operation nozzle.Operation) (nozzle.Status, int, error) {
 	req, err := newBatchPurgeRequest(ctx, p.config.ZoneID, p.config.APIToken, operation.URLs)
 	if err != nil {
-		return NotAttempted, 0, err
+		return nozzle.NotAttempted, 0, err
 	}
 	client := *p.config.HTTPClient
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
@@ -96,7 +75,7 @@ func (p *Provider) executeOperation(ctx context.Context, operation nozzle.Operat
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return Indeterminate, 0, err
+		return nozzle.Indeterminate, 0, err
 	}
 	defer func() {
 		// A close error does not change the response outcome.
@@ -105,20 +84,20 @@ func (p *Provider) executeOperation(ctx context.Context, operation nozzle.Operat
 	const maxResponseBytes = 64 * 1024
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
-		return Indeterminate, resp.StatusCode, err
+		return nozzle.Indeterminate, resp.StatusCode, err
 	}
 	if len(body) > maxResponseBytes {
-		return Indeterminate, resp.StatusCode, errors.New("purge response exceeds 64 KiB")
+		return nozzle.Indeterminate, resp.StatusCode, errors.New("purge response exceeds 64 KiB")
 	}
 	success, err := parsePurgeResponse(body)
 	if err != nil {
-		return Indeterminate, resp.StatusCode, err
+		return nozzle.Indeterminate, resp.StatusCode, err
 	}
 	if !success && (resp.StatusCode >= 200 && resp.StatusCode < 300 || resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout) {
-		return Rejected, resp.StatusCode, errors.New("purge operation was rejected")
+		return nozzle.Rejected, resp.StatusCode, errors.New("purge operation was rejected")
 	}
 	if !success || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Indeterminate, resp.StatusCode, errors.New("purge acceptance was not confirmed")
+		return nozzle.Indeterminate, resp.StatusCode, errors.New("purge acceptance was not confirmed")
 	}
-	return Accepted, resp.StatusCode, nil
+	return nozzle.Accepted, resp.StatusCode, nil
 }
