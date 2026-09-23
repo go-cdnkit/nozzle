@@ -15,3 +15,10 @@ func TestStatusDistinguishesExecutionOutcomes(t *testing.T) {
 		t.Fatalf("NotAttempted = %d, want zero", NotAttempted)
 	}
 }
+
+func TestOperationResultZeroValue(t *testing.T) {
+	var result OperationResult
+	if result.Status != NotAttempted || result.HTTPStatus != 0 || result.Operation.URLs != nil {
+		t.Fatalf("zero result = %#v", result)
+	}
+}

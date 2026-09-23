@@ -13,3 +13,10 @@ const (
 	// Indeterminate means submission began without a usable confirmation.
 	Indeterminate
 )
+
+// OperationResult associates an execution outcome with independently owned targets.
+type OperationResult struct {
+	Operation  Operation
+	Status     Status
+	HTTPStatus int
+}
