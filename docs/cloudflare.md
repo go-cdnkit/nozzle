@@ -14,7 +14,7 @@ Set an appropriate client timeout or context deadline; nozzle supplies neither.
 order and duplicates, and groups targets without network I/O. Your application
 decides which public URLs changed; nozzle does not discover them.
 
-`provider.Execute(ctx, plan)` returns `[]cloudflare.OperationResult` and an error.
+`provider.Execute(ctx, plan)` returns `[]nozzle.OperationResult` and an error.
 It copies all targets, validates the entire plan, then submits operations in order.
 Invalid input sends nothing. A nil plan fails; an empty plan is a successful no-op.
 Supply a non-nil context and do not mutate the plan during its initial snapshot.
@@ -28,12 +28,12 @@ independently owned URL slices. No regrouping or full-cache fallback occurs.
 
 | Status | Meaning |
 | --- | --- |
-| `NotAttempted` | The operation was not handed to the HTTP client. |
-| `Accepted` | A complete 2xx JSON response explicitly confirms acceptance without conflicting errors. |
-| `Rejected` | A complete JSON response explicitly refuses the operation on 2xx or 4xx other than 408. |
-| `Indeterminate` | Submission began, but there is no trustworthy acceptance or rejection confirmation. |
+| `nozzle.NotAttempted` | The operation was not handed to the HTTP client. |
+| `nozzle.Accepted` | A complete 2xx JSON response explicitly confirms acceptance without conflicting errors. |
+| `nozzle.Rejected` | A complete JSON response explicitly refuses the operation on 2xx or 4xx other than 408. |
+| `nozzle.Indeterminate` | Submission began, but there is no trustworthy acceptance or rejection confirmation. |
 
-`Accepted` does not prove global cache invalidation. Transport failures, interrupted
+`nozzle.Accepted` does not prove global cache invalidation. Transport failures, interrupted
 or malformed responses, redirects, 408 and 5xx are indeterminate. Even a dial error
 is conservatively indeterminate once the HTTP client has received the request.
 A 429 is rejected only when its complete response explicitly says `success=false`.
@@ -59,3 +59,9 @@ identifies the URL's index within that operation. A nil-plan error has no operat
   tags, prefixes, wildcards or full-cache purges.
 - Applications decide how to respond to partial or uncertain results. Do not blindly
   replay an entire plan when earlier operations were already accepted.
+
+## Unreleased API migration
+
+`Status`, `OperationResult`, and the four status constants now live in the root
+`nozzle` package. Replace their previous `cloudflare.` qualifiers with `nozzle.`.
+`*cloudflare.OperationError` remains provider-specific; execution semantics are unchanged.

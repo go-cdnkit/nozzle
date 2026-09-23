@@ -26,7 +26,7 @@ not establish Fastly routing, cache-key coverage, or purge acceptance.
 
 ## Execution
 
-`provider.Execute(ctx, plan)` returns `[]fastly.OperationResult` and an error.
+`provider.Execute(ctx, plan)` returns `[]nozzle.OperationResult` and an error.
 It snapshots and validates every operation before sending anything. Each operation
 must contain exactly one URL; multi-URL operations are rejected, not regrouped.
 A nil plan fails. An empty plan succeeds without network I/O.
@@ -42,10 +42,10 @@ slices are independent copies; do not mutate the input while it is being copied.
 
 | Status | Meaning |
 | --- | --- |
-| `NotAttempted` | Not handed to the HTTP client. |
-| `Accepted` | A complete, unambiguous API response confirmed acceptance. |
-| `Rejected` | A recognized API error response explicitly refused the operation. |
-| `Indeterminate` | Submission began but acceptance could not be established. |
+| `nozzle.NotAttempted` | Not handed to the HTTP client. |
+| `nozzle.Accepted` | A complete, unambiguous API response confirmed acceptance. |
+| `nozzle.Rejected` | A recognized API error response explicitly refused the operation. |
+| `nozzle.Indeterminate` | Submission began but acceptance could not be established. |
 
 Acceptance requires a 2xx response with `status: "ok"` and no non-empty
 `msg`, `detail`, or `errors`. Rejection requires a 4xx response other than 408,
@@ -66,7 +66,7 @@ or background worker is introduced; a custom transport may perform its own retri
 
 ## Limits
 
-`Accepted` is API acceptance, not proof of global cache invalidation. Planning
+`nozzle.Accepted` is API acceptance, not proof of global cache invalidation. Planning
 does not infer custom cache keys, rewriting, service routing, or `Vary` coverage.
 Soft purge, surrogate keys, full-cache purge, and completion polling are unsupported.
 
@@ -74,3 +74,9 @@ The fixed HTTPS API endpoint constrains nozzle's request destination, not Fastly
 downstream behavior. Review Fastly's [purge authentication guidance](https://www.fastly.com/documentation/guides/full-site-delivery/purging/authenticating-api-purge-requests/),
 including its warning about tokens and non-HTTPS sites, before live use. Tests use
 local TLS servers; they do not establish live credential safety or cache coverage.
+
+## Unreleased API migration
+
+`Status`, `OperationResult`, and the four status constants now live in the root
+`nozzle` package. Replace their previous `fastly.` qualifiers with `nozzle.`.
+`*fastly.OperationError` remains provider-specific; execution semantics are unchanged.
