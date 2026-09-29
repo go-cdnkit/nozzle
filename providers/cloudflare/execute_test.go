@@ -84,7 +84,7 @@ func TestCloudflareExecuteValidatesWholePlanBeforeSending(t *testing.T) {
 				t.Fatalf("results = %#v, error = %v", results, err)
 			}
 			for i, result := range results {
-				if result.Status != NotAttempted || result.HTTPStatus != 0 || !reflect.DeepEqual(result.Operation, plan.Operations[i]) {
+				if result.Status != nozzle.NotAttempted || result.HTTPStatus != 0 || !reflect.DeepEqual(result.Operation, plan.Operations[i]) {
 					t.Fatalf("result %d = %#v", i, result)
 				}
 			}
@@ -115,7 +115,7 @@ func TestCloudflareExecuteHonorsPreCanceledContext(t *testing.T) {
 		t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
 	}
 	for i, result := range results {
-		if result.Status != NotAttempted || result.HTTPStatus != 0 || !reflect.DeepEqual(result.Operation, plan.Operations[i]) {
+		if result.Status != nozzle.NotAttempted || result.HTTPStatus != 0 || !reflect.DeepEqual(result.Operation, plan.Operations[i]) {
 			t.Fatalf("result %d = %#v", i, result)
 		}
 	}
@@ -140,7 +140,7 @@ func TestCloudflareExecutePreservesPreflightErrorLocation(t *testing.T) {
 	if !errors.As(err, &operationErr) || operationErr.Index != 1 || !errors.As(err, &invalid) || invalid.Index != 0 {
 		t.Fatalf("error = %v", err)
 	}
-	if len(results) != 2 || results[0].Status != NotAttempted || results[1].Status != NotAttempted || calls.Load() != 0 {
+	if len(results) != 2 || results[0].Status != nozzle.NotAttempted || results[1].Status != nozzle.NotAttempted || calls.Load() != 0 {
 		t.Fatalf("results = %#v, calls = %d", results, calls.Load())
 	}
 }
@@ -193,7 +193,7 @@ func TestCloudflareExecuteSendsExactURLBatch(t *testing.T) {
 	if err != nil || len(results) != 1 || calls.Load() != 1 {
 		t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
 	}
-	if results[0].Status != Accepted || results[0].HTTPStatus != http.StatusOK || !reflect.DeepEqual(results[0].Operation, plan.Operations[0]) {
+	if results[0].Status != nozzle.Accepted || results[0].HTTPStatus != http.StatusOK || !reflect.DeepEqual(results[0].Operation, plan.Operations[0]) {
 		t.Fatalf("result = %#v", results[0])
 	}
 }
@@ -229,7 +229,7 @@ func TestCloudflareExecuteAcceptsOptionalMetadata(t *testing.T) {
 			}
 			plan := &nozzle.Plan{Operations: []nozzle.Operation{{URLs: []string{"https://example.com/a"}}}}
 			results, err := provider.Execute(t.Context(), plan)
-			if err != nil || len(results) != 1 || results[0].Status != Accepted || results[0].HTTPStatus != tt.status {
+			if err != nil || len(results) != 1 || results[0].Status != nozzle.Accepted || results[0].HTTPStatus != tt.status {
 				t.Fatalf("results = %#v, error = %v", results, err)
 			}
 		})
@@ -276,7 +276,7 @@ func TestCloudflareExecutePreservesOperationOrder(t *testing.T) {
 		t.Fatalf("results = %#v, error = %v, requests = %d", results, err, len(requests))
 	}
 	for i, result := range results {
-		if result.Status != Accepted || result.HTTPStatus != http.StatusOK || !reflect.DeepEqual(result.Operation, plan.Operations[i]) || !reflect.DeepEqual(<-requests, plan.Operations[i].URLs) {
+		if result.Status != nozzle.Accepted || result.HTTPStatus != http.StatusOK || !reflect.DeepEqual(result.Operation, plan.Operations[i]) || !reflect.DeepEqual(<-requests, plan.Operations[i].URLs) {
 			t.Fatalf("operation %d differs", i)
 		}
 	}
@@ -311,7 +311,7 @@ func TestCloudflareExecuteReportsExplicitRejection(t *testing.T) {
 			if err == nil || len(results) != 2 || calls.Load() != 1 {
 				t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
 			}
-			if results[0].Status != Rejected || results[0].HTTPStatus != status || results[1].Status != NotAttempted || results[1].HTTPStatus != 0 {
+			if results[0].Status != nozzle.Rejected || results[0].HTTPStatus != status || results[1].Status != nozzle.NotAttempted || results[1].HTTPStatus != 0 {
 				t.Fatalf("results = %#v", results)
 			}
 		})
@@ -368,7 +368,7 @@ func TestCloudflareExecuteDoesNotGuessAcceptance(t *testing.T) {
 			if err == nil || len(results) != 2 || calls.Load() != 1 {
 				t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
 			}
-			if results[0].Status != Indeterminate || results[0].HTTPStatus != tt.status || results[1].Status != NotAttempted {
+			if results[0].Status != nozzle.Indeterminate || results[0].HTTPStatus != tt.status || results[1].Status != nozzle.NotAttempted {
 				t.Fatalf("results = %#v", results)
 			}
 		})
@@ -393,7 +393,7 @@ func TestCloudflareExecutePreservesTransportError(t *testing.T) {
 	if !errors.Is(err, sentinel) || len(results) != 2 || calls.Load() != 1 {
 		t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
 	}
-	if results[0].Status != Indeterminate || results[0].HTTPStatus != 0 || results[1].Status != NotAttempted || results[1].HTTPStatus != 0 {
+	if results[0].Status != nozzle.Indeterminate || results[0].HTTPStatus != 0 || results[1].Status != nozzle.NotAttempted || results[1].HTTPStatus != 0 {
 		t.Fatalf("results = %#v", results)
 	}
 }
@@ -435,13 +435,13 @@ func TestCloudflareExecuteRetainsPartialResults(t *testing.T) {
 			if err == nil || len(results) != 3 || calls.Load() != 2 {
 				t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
 			}
-			want := Rejected
+			want := nozzle.Rejected
 			wantHTTP := http.StatusForbidden
 			if !rejection {
-				want = Indeterminate
+				want = nozzle.Indeterminate
 				wantHTTP = http.StatusServiceUnavailable
 			}
-			if results[0].Status != Accepted || results[0].HTTPStatus != 200 || results[1].Status != want || results[1].HTTPStatus != wantHTTP || results[2].Status != NotAttempted || results[2].HTTPStatus != 0 {
+			if results[0].Status != nozzle.Accepted || results[0].HTTPStatus != 200 || results[1].Status != want || results[1].HTTPStatus != wantHTTP || results[2].Status != nozzle.NotAttempted || results[2].HTTPStatus != 0 {
 				t.Fatalf("results = %#v", results)
 			}
 			for i, result := range results {
@@ -473,7 +473,7 @@ func TestCloudflareExecuteCancellationDuringSubmission(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || len(results) != 2 || calls.Load() != 1 {
 		t.Fatalf("results = %#v, error = %v, calls = %d", results, err, calls.Load())
 	}
-	if results[0].Status != Indeterminate || results[1].Status != NotAttempted {
+	if results[0].Status != nozzle.Indeterminate || results[1].Status != nozzle.NotAttempted {
 		t.Fatalf("results = %#v", results)
 	}
 }
@@ -520,9 +520,9 @@ func TestCloudflareExecuteBoundsAndCompletesResponseReading(t *testing.T) {
 			if len(results) != 1 || calls.Load() != 1 {
 				t.Fatalf("results = %#v, calls = %d", results, calls.Load())
 			}
-			want := Indeterminate
+			want := nozzle.Indeterminate
 			if tt.accepted {
-				want = Accepted
+				want = nozzle.Accepted
 			}
 			if (err == nil) != tt.accepted || results[0].Status != want || results[0].HTTPStatus != 200 {
 				t.Fatalf("results = %#v, error = %v", results, err)
@@ -557,7 +557,7 @@ func TestCloudflareExecuteHonorsClientTimeout(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) || len(results) != 2 {
 		t.Fatalf("results = %#v, error = %v", results, err)
 	}
-	if results[0].Status != Indeterminate || results[1].Status != NotAttempted {
+	if results[0].Status != nozzle.Indeterminate || results[1].Status != nozzle.NotAttempted {
 		t.Fatalf("results = %#v", results)
 	}
 	if client.Timeout != 50*time.Millisecond {
@@ -600,7 +600,7 @@ func TestCloudflareExecuteDoesNotFollowRedirects(t *testing.T) {
 			if err == nil || len(results) != 2 || calls.Load() != 1 || redirects.Load() != 0 {
 				t.Fatalf("results = %#v, error = %v, calls = %d, redirects = %d", results, err, calls.Load(), redirects.Load())
 			}
-			if results[0].Status != Indeterminate || results[0].HTTPStatus != status || results[1].Status != NotAttempted {
+			if results[0].Status != nozzle.Indeterminate || results[0].HTTPStatus != status || results[1].Status != nozzle.NotAttempted {
 				t.Fatalf("results = %#v", results)
 			}
 			if client.Transport != transport || client.Timeout != 5*time.Second || reflect.ValueOf(client.CheckRedirect).Pointer() != reflect.ValueOf(redirectPolicy).Pointer() {
@@ -652,7 +652,7 @@ func TestCloudflareExecuteSnapshotsTargetsBeforeSending(t *testing.T) {
 	}
 	want := [][]string{{"https://example.com/a"}, {"https://example.com/b"}}
 	for i, result := range results {
-		if result.Status != Accepted || !reflect.DeepEqual(result.Operation.URLs, want[i]) || !reflect.DeepEqual(<-requests, want[i]) {
+		if result.Status != nozzle.Accepted || !reflect.DeepEqual(result.Operation.URLs, want[i]) || !reflect.DeepEqual(<-requests, want[i]) {
 			t.Fatalf("operation %d differs: %#v", i, result)
 		}
 	}
