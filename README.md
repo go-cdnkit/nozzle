@@ -6,11 +6,14 @@
 
 A small Go library for purging CDN caches with interchangeable providers.
 
-> Under development. Cloudflare and Fastly support URL planning and sequential purge execution; no releases yet.
+> Under development. Cloudflare and Fastly support URL planning and sequential purge execution.
+> The API may change before v1.
 
 ## Installation and usage
 
-Coming with the first release.
+```console
+go get github.com/go-cdnkit/nozzle
+```
 
 See [Cloudflare](docs/cloudflare.md) and [Fastly](docs/fastly.md) for the current
 APIs and result semantics.
