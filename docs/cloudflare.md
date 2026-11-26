@@ -1,6 +1,6 @@
 # Cloudflare
 
-Unreleased API for exact-URL invalidation. Planning is offline; execution sends
+API for exact-URL invalidation. Planning is offline; execution sends
 requests to the Cloudflare purge API. No account settings are discovered.
 
 ## API
